@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SafeMap Kyiv — Оперативний моніторинг</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+
+    <style>
+        .leaflet-routing-container { display: none !important; }
+        ::-webkit-scrollbar { width: 5px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @keyframes modalPop {
+            0% { opacity: 0; transform: scale(0.95); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .animate-pop {
+            animation: modalPop 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex bg-zinc-900 text-zinc-800 font-sans antialiased">
+
+<aside class="w-[400px] h-full flex flex-col bg-white border-r border-zinc-200 shadow-2xl z-30 transition-all duration-300">
+    <div class="p-6 border-b border-zinc-100 flex items-center justify-between bg-gradient-to-b from-zinc-50/50 to-white">
+        <div class="flex items-center space-x-3.5">
+            <div class="w-11 h-11 rounded-2xl bg-primary-600 flex items-center justify-center text-white shadow-lg shadow-primary-500/30 text-xl font-extrabold transform hover:rotate-6 transition duration-300">
+                🛡️
+            </div>
+            <div>
+                <h1 class="text-base font-extrabold text-zinc-900 tracking-tight flex items-center gap-1.5">
+                    SafeMap Kyiv
+                    <span class="text-[9px] uppercase px-1.5 py-0.5 rounded-md bg-primary-50 text-primary-700 font-bold border border-primary-100">Live</span>
+                </h1>
+                <p class="text-xs text-zinc-400 font-medium">Цивільний захист & Навігація</p>
+            </div>
+        </div>
+        <button id="refreshBtn" class="p-2.5 text-zinc-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all duration-200">
+            <svg class="w-4 h-4 transition-transform active:rotate-180 duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+        </button>
+    </div>
+
+    <div class="p-6 flex-1 overflow-y-auto space-y-6">
+        <div class="bg-zinc-50 p-4 rounded-2xl border border-zinc-200/70 shadow-sm transition hover:border-zinc-300">
+            <div class="flex items-center justify-between mb-2">
+                <label class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Оперативний стан</label>
+                <span class="relative flex h-2 w-2">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+            </div>
+            <select id="alertSelect" class="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-zinc-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition">
+                <option value="none">🟢 Штатний режим (Відбій)</option>
+                <option value="yellow">🟡 Жовтий рівень (Готовність)</option>
+                <option value="red">🔴 Червоний рівень (Тривога)</option>
+            </select>
+            <p id="alertDesc" class="mt-2.5 text-[11px] text-zinc-500 font-medium leading-relaxed">
+                🟢 Усі об'єкти функціонують у стандартному режимі.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+            <button id="btnOpenReport" class="flex items-center justify-center space-x-2 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] text-white text-xs font-semibold py-3 px-4 rounded-xl shadow-md transition-all duration-200">
+                <span>📝</span>
+                <span>Звіт диспетчера</span>
+            </button>
+            <button id="btnToggleNav" class="flex items-center justify-center space-x-2 bg-primary-600 hover:bg-primary-700 active:scale-[0.98] text-white text-xs font-semibold py-3 px-4 rounded-xl shadow-md shadow-primary-500/20 transition-all duration-200">
+                <span>🧭</span>
+                <span id="navBtnText">Навігатор</span>
+            </button>
+        </div>
+
+        <div id="navBanner" class="hidden p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-900 text-xs font-medium flex items-center space-x-2.5 animate-pulse">
+            <span class="text-base">📍</span>
+            <span>Клікніть на карті Києва для розрахунку шляху до найближчого укриття.</span>
+        </div>
+
+        <div>
+            <div class="flex items-center justify-between mb-3 px-1">
+                <h2 class="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Моніторинг локацій</h2>
+                <span id="countBadge" class="bg-zinc-100 text-zinc-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-zinc-200/60">0</span>
+            </div>
+            <div id="locationsList" class="space-y-2.5">
+                <div class="text-center py-8 text-xs text-zinc-400 font-medium">Синхронізація з C++...</div>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<main class="flex-1 h-full relative">
+    <div id="map" class="w-full h-full z-0"></div>
+
+    <div id="routeCard" class="hidden absolute top-6 right-6 z-20 w-84 bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl p-4 shadow-xl transition-all duration-300">
+        <div class="flex items-start justify-between">
+            <div>
+                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60 mb-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        Маршрут розраховано
+                    </span>
+                <h4 id="routeTargetName" class="text-xs font-bold text-zinc-900 line-clamp-1">—</h4>
+            </div>
+            <button id="btnCloseRoute" class="text-zinc-400 hover:text-zinc-600 p-1">✕</button>
+        </div>
+        <div class="mt-3.5 grid grid-cols-2 gap-2 text-center text-xs">
+            <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
+                <span class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Відстань</span>
+                <span id="routeDistance" class="font-extrabold text-zinc-800 text-xs">0 м</span>
+            </div>
+            <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
+                <span class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Вільних місць</span>
+                <span id="routePlaces" class="font-extrabold text-primary-600 text-xs">0</span>
+            </div>
+        </div>
+    </div>
+</main>
+
+<div id="detailsModal" class="hidden fixed inset-0 z-[9999] bg-zinc-950/60 backdrop-blur-md items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-pop">
+        <div class="p-6 border-b border-zinc-100 flex items-center justify-between">
+            <h3 id="detailsName" class="font-extrabold text-zinc-900 text-sm">Деталі об'єкта</h3>
+            <button class="modal-close text-zinc-400 hover:text-zinc-600 p-1 text-sm font-bold">✕</button>
+        </div>
+        <div id="detailsBody" class="p-6 space-y-3.5 text-xs text-zinc-600"></div>
+        <div class="p-4 bg-zinc-50 border-t border-zinc-100 flex justify-end">
+            <button class="modal-close bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-bold px-5 py-2.5 rounded-xl transition">Закрити</button>
+        </div>
+    </div>
+</div>
+
+<div id="reportModal" class="hidden fixed inset-0 z-[9999] bg-zinc-950/60 backdrop-blur-md items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-pop">
+        <div class="p-6 border-b border-zinc-100 flex items-center justify-between">
+            <h3 class="font-extrabold text-zinc-900 text-sm flex items-center gap-2">
+                <span>📝</span> Краудсорсинговий звіт
+            </h3>
+            <button class="modal-close text-zinc-400 hover:text-zinc-600 p-1 text-sm font-bold">✕</button>
+        </div>
+        <div class="p-6 space-y-4">
+            <div>
+                <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Локація</label>
+                <select id="reportEstSelect" class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition"></select>
+            </div>
+            <div class="flex items-center justify-between p-3.5 bg-zinc-50 rounded-2xl border border-zinc-200/80">
+                <div>
+                    <span class="text-xs font-bold text-zinc-800 block">Генератор (Резервне живлення)</span>
+                    <span class="text-[10px] text-zinc-400">Чи працює електрика на локації</span>
+                </div>
+                <input type="checkbox" id="reportGenerator" checked class="w-5 h-5 accent-primary-600 rounded cursor-pointer">
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Зміна кількості людей в укритті</label>
+                <input type="number" id="reportOccupancy" value="10" step="5" class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition">
+            </div>
+        </div>
+        <div class="p-4 bg-zinc-50 border-t border-zinc-100 flex justify-end space-x-2.5">
+            <button class="modal-close bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-bold px-4 py-2.5 rounded-xl transition">Скасувати</button>
+            <button id="btnSubmitReport" class="bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md shadow-primary-500/20 transition">Надіслати на сервер</button>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+
+<script>
+    const map = L.map('map', { zoomControl: false }).setView([50.4470, 30.5210], 14);
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    let markersLayer = L.layerGroup().addTo(map);
+    let userMarker = null;
+    let routingControl = null;
+    let establishmentsData = [];
+    let isNavMode = false;
+
+    async function loadData() {
+        try {
+            const res = await fetch('/api/establishments');
+            establishmentsData = await res.json();
+
+            markersLayer.clearLayers();
+            const listEl = document.getElementById('locationsList');
+            const selectEl = document.getElementById('reportEstSelect');
+            document.getElementById('countBadge').innerText = establishmentsData.length;
+            listEl.innerHTML = '';
+            selectEl.innerHTML = '';
+
+            establishmentsData.forEach(item => {
+                const markerColor = item.accessible ? '#10b981' : '#f43f5e';
+                const customIcon = L.divIcon({
+                    className: 'custom-pin',
+                    html: `<div style="background-color: ${markerColor}; width: 14px; height: 14px; border: 3px solid white; border-radius: 9999px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);"></div>`,
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7]
+                });
+
+                const marker = L.marker([item.lat, item.lng], { icon: customIcon }).addTo(markersLayer);
+
+                const badge = item.accessible
+                    ? `<span class="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/80">ВІДЧИНЕНО</span>`
+                    : `<span class="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200/80">ЗАЧИНЕНО</span>`;
+
+                marker.bindPopup(`
+                        <div class="p-1.5 text-center font-sans">
+                            <h5 class="font-extrabold text-zinc-900 text-xs mb-0.5">${item.name}</h5>
+                            <p class="text-[10px] text-zinc-400 font-medium mb-2">${item.type}</p>
+                            <div class="mb-2.5">${badge}</div>
+                            <div class="text-[11px] text-zinc-600 mb-3">Місць в укритті: <b class="text-zinc-900">${item.shelter_free}</b> / ${item.shelter_capacity}</div>
+                            <button onclick="showDetails(${item.id})" class="w-full py-1.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-[10px] font-extrabold transition">Детальніше</button>
+                        </div>
+                    `);
+
+                const card = document.createElement('div');
+                card.className = "p-3.5 bg-white hover:bg-zinc-50/80 border border-zinc-200/70 hover:border-zinc-300 rounded-2xl cursor-pointer transition shadow-sm flex items-center justify-between";
+                card.innerHTML = `
+                        <div class="pr-2">
+                            <div class="font-bold text-xs text-zinc-800 line-clamp-1">${item.name}</div>
+                            <div class="text-[10px] text-zinc-400 font-medium mt-0.5">Вільних місць: <span class="font-bold text-zinc-700">${item.shelter_free}</span></div>
+                        </div>
+                        ${badge}
+                    `;
+                card.onclick = () => {
+                    map.flyTo([item.lat, item.lng], 16, { duration: 1.2 });
+                    marker.openPopup();
+                };
+                listEl.appendChild(card);
+
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = item.name;
+                selectEl.appendChild(opt);
+            });
+
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    document.getElementById('alertSelect').addEventListener('change', async (e) => {
+        const level = e.target.value;
+        const desc = {
+            'none': '🟢 Усі заклади столиці функціонують у стандартному режимі.',
+            'yellow': '🟡 Жовтий рівень: перевірено резервне живлення, чергування персоналу.',
+            'red': '🔴 Червоний рівень: відкриті виключно сертифіковані укриття!'
+        };
+        document.getElementById('alertDesc').innerText = desc[level];
+
+        await fetch('/api/alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ level })
+        });
+        loadData();
+    });
+
+    const navBtn = document.getElementById('btnToggleNav');
+    const navBanner = document.getElementById('navBanner');
+
+    navBtn.addEventListener('click', () => {
+        isNavMode = !isNavMode;
+        if (isNavMode) {
+            navBtn.classList.replace('bg-primary-600', 'bg-amber-500');
+            navBtn.classList.replace('hover:bg-primary-700', 'hover:bg-amber-600');
+            document.getElementById('navBtnText').innerText = "Вимкнути";
+            navBanner.classList.remove('hidden');
+        } else {
+            navBtn.classList.replace('bg-amber-500', 'bg-primary-600');
+            navBtn.classList.replace('hover:bg-amber-600', 'hover:bg-primary-700');
+            document.getElementById('navBtnText').innerText = "Навігатор";
+            navBanner.classList.add('hidden');
+            clearNavigation();
+        }
+    });
+
+    function clearNavigation() {
+        if (routingControl) {
+            map.removeControl(routingControl);
+            routingControl = null;
+        }
+        if (userMarker) {
+            map.removeLayer(userMarker);
+            userMarker = null;
+        }
+        document.getElementById('routeCard').classList.add('hidden');
+    }
+
+    map.on('click', async (e) => {
+        if (!isNavMode) return;
+        const { lat, lng } = e.latlng;
+
+        clearNavigation();
+
+        userMarker = L.circleMarker([lat, lng], {
+            radius: 7,
+            fillColor: '#4f46e5',
+            color: '#ffffff',
+            weight: 3,
+            fillOpacity: 1
+        }).addTo(map).bindPopup("Ви тут").openPopup();
+
+        const res = await fetch(`/api/nearest-shelter?lat=${lat}&lng=${lng}`);
+        const data = await res.json();
+
+        if (data.found) {
+            routingControl = L.Routing.control({
+                waypoints: [
+                    L.latLng(lat, lng),
+                    L.latLng(data.lat, data.lng)
+                ],
+                router: L.Routing.osrmv1({
+                    serviceUrl: 'https://router.project-osrm.org/route/v1',
+                    profile: 'foot'
+                }),
+                lineOptions: {
+                    styles: [{ color: '#4f46e5', weight: 5, opacity: 0.9 }]
+                },
+                addWaypoints: false,
+                draggableWaypoints: false,
+                fitSelectedRoutes: true,
+                show: false
+            }).addTo(map);
+
+            routingControl.on('routesfound', function(e) {
+                const routes = e.routes;
+                const summary = routes[0].summary;
+
+                document.getElementById('routeTargetName').innerText = data.name;
+                document.getElementById('routeDistance').innerText = Math.round(summary.totalDistance) + ' м (' + Math.round(summary.totalTime / 60) + ' хв)';
+                document.getElementById('routePlaces').innerText = data.free_places;
+                document.getElementById('routeCard').classList.remove('hidden');
+            });
+
+        } else {
+            alert(data.message);
+        }
+    });
+
+    document.getElementById('btnCloseRoute').onclick = clearNavigation;
+
+    function openModal(id) {
+        const el = document.getElementById(id);
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+    }
+
+    function closeModal(id) {
+        const el = document.getElementById(id);
+        el.classList.remove('flex');
+        el.classList.add('hidden');
+    }
+
+    window.showDetails = function(id) {
+        const item = establishmentsData.find(x => x.id === id);
+        if (!item) return;
+
+        document.getElementById('detailsName').innerText = item.name;
+        document.getElementById('detailsBody').innerHTML = `
+                <div class="flex justify-between py-2 border-b border-zinc-100">
+                    <span class="text-zinc-400 font-medium">Тип закладу:</span>
+                    <span class="font-bold text-zinc-800">${item.type}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-zinc-100">
+                    <span class="text-zinc-400 font-medium">Резервне живлення:</span>
+                    <span class="font-bold ${item.generator ? 'text-emerald-600' : 'text-zinc-400'}">${item.generator ? '✅ Підключено' : '❌ Відсутнє'}</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-zinc-100">
+                    <span class="text-zinc-400 font-medium">Місткість укриття:</span>
+                    <span class="font-bold text-zinc-800">${item.shelter_capacity} осіб</span>
+                </div>
+                <div class="flex justify-between py-2 border-b border-zinc-100">
+                    <span class="text-zinc-400 font-medium">Вільних місць:</span>
+                    <span class="font-extrabold text-primary-600">${item.shelter_free}</span>
+                </div>
+                <div class="flex justify-between py-2">
+                    <span class="text-zinc-400 font-medium">Поточний статус:</span>
+                    <span class="font-bold ${item.accessible ? 'text-emerald-600' : 'text-rose-600'}">${item.accessible ? 'Доступно для цивільних' : 'Зачинено через тривогу'}</span>
+                </div>
+            `;
+        openModal('detailsModal');
+    };
+
+    document.getElementById('btnOpenReport').onclick = () => openModal('reportModal');
+
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.onclick = () => {
+            closeModal('detailsModal');
+            closeModal('reportModal');
+        };
+    });
+
+    document.getElementById('btnSubmitReport').addEventListener('click', async () => {
+        const estId = parseInt(document.getElementById('reportEstSelect').value);
+        const hasGen = document.getElementById('reportGenerator').checked;
+        const occDelta = parseInt(document.getElementById('reportOccupancy').value) || 0;
+
+        await fetch('/api/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: estId, generator: hasGen, occupied: occDelta })
+        });
+
+        closeModal('reportModal');
+        loadData();
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', loadData);
+    loadData();
+</script>
+</body>
+</html>

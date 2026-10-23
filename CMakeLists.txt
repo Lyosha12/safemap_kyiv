@@ -2,17 +2,14 @@ cmake_minimum_required(VERSION 3.20)
 project(safemap_kyiv)
 
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-set(CMAKE_AUTOUIC ON)
+# Вказуємо підтримку Windows 10+ для MinGW та cpp-httplib
+add_compile_definitions(_WIN32_WINNT=0x0A00)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+include_directories(include)
 
-set(SOURCES
+add_executable(safemap_kyiv
         main.cpp
-
         Infrastructure.h
         Infrastructure.cpp
         Establishments.h
@@ -21,17 +18,8 @@ set(SOURCES
         Crowdsourcing.cpp
         RoutePlanner.h
         RoutePlanner.cpp
-
-        MainWindow.h
-        MainWindow.cpp
-        ReportDialog.h
-        ReportDialog.cpp
-        DetailsDialog.h
-        DetailsDialog.cpp
-        RouteDialog.h
-        RouteDialog.cpp
 )
 
-add_executable(safemap_kyiv ${SOURCES})
-
-target_link_libraries(safemap_kyiv PRIVATE Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(safemap_kyiv ws2_32 crypt32)
+endif()
