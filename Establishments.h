@@ -1,8 +1,5 @@
-#ifndef SAFEMAP_KYIV_ESTABLISHMENTS_H
-#define SAFEMAP_KYIV_ESTABLISHMENTS_H
-
-#endif //SAFEMAP_KYIV_ESTABLISHMENTS_H
 #pragma once
+
 #include <string>
 #include "Infrastructure.h"
 
@@ -16,6 +13,7 @@ class MapNode {
 protected:
     int id;
     Coordinates location;
+
 public:
     MapNode(int id, Coordinates loc);
     virtual ~MapNode() = default;
@@ -29,6 +27,7 @@ protected:
     Shelter base_shelter;
     bool has_generator;
     bool is_temporarily_closed;
+
 public:
     Establishment(int id, Coordinates loc, std::string n, Shelter s, bool gen);
     virtual bool is_accessible(AlertLevel level) const = 0;
@@ -36,11 +35,17 @@ public:
     void force_close();
     void apply_crowdsource_data(bool gen_state, int shelter_influx);
     bool can_shelter_more() const;
+    virtual std::string get_name() const { return name; }
+    virtual std::string get_type_name() const { return "Заклад"; }
+    Coordinates get_coordinates() const { return location; }
+    bool has_backup_power() const { return has_generator; }
+    Shelter get_shelter() const { return base_shelter; }
 };
 
 class Supermarket : public Establishment {
 private:
     bool has_food_reserves;
+
 public:
     Supermarket(int id, Coordinates loc, std::string n, Shelter s, bool gen, bool food);
     bool is_accessible(AlertLevel level) const override;
@@ -50,6 +55,7 @@ public:
 class PostOffice : public Establishment {
 private:
     double max_parcel_weight;
+
 public:
     PostOffice(int id, Coordinates loc, std::string n, Shelter s, bool gen, double max_weight);
     bool is_accessible(AlertLevel level) const override;

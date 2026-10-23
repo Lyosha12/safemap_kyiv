@@ -1,8 +1,5 @@
-#ifndef SAFEMAP_KYIV_CROWDSOURCING_H
-#define SAFEMAP_KYIV_CROWDSOURCING_H
-
-#endif //SAFEMAP_KYIV_CROWDSOURCING_H
 #pragma once
+
 #include <string>
 #include <ctime>
 #include "Establishments.h"
@@ -12,6 +9,7 @@ private:
     std::string username;
     double trust_score;
     int reports_submitted;
+
 public:
     User(std::string name);
 
@@ -25,6 +23,7 @@ class Report {
 protected:
     User author;
     std::time_t timestamp;
+
 public:
     Report(User a);
     virtual ~Report() = default;
@@ -39,6 +38,7 @@ class StatusReport : public Report {
 private:
     bool generator_working;
     int observed_shelter_influx;
+
 public:
     StatusReport(User a, bool gen, int influx);
 
@@ -49,6 +49,7 @@ public:
 class HazardReport : public Report {
 private:
     bool is_path_blocked;
+
 public:
     HazardReport(User a, bool blocked);
 

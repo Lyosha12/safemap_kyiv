@@ -24,6 +24,7 @@ bool Shelter::try_admit_people(int count) {
 }
 
 double Shelter::get_occupancy_rate() const {
+    if (capacity == 0) return 0.0;
     return static_cast<double>(current_occupancy) / capacity;
 }
 

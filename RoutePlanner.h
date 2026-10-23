@@ -1,7 +1,3 @@
-#ifndef SAFEMAP_KYIV_ROUTEPLANNER_H
-#define SAFEMAP_KYIV_ROUTEPLANNER_H
-
-#endif //SAFEMAP_KYIV_ROUTEPLANNER_H
 #pragma once
 #include <vector>
 #include <memory>
@@ -13,6 +9,7 @@ class RoutePlanner {
 private:
     std::vector<std::shared_ptr<Establishment>> map_nodes;
     AlertLevel current_alert_level;
+
 public:
     RoutePlanner();
 
@@ -33,4 +30,12 @@ public:
     std::shared_ptr<Establishment> find_nearest_shelter(const Coordinates& from_loc) const;
     void process_user_report(std::shared_ptr<Report> report, std::shared_ptr<Establishment> target);
     double evaluate_route_safety(std::shared_ptr<Establishment> destination) const;
+
+    const std::vector<std::shared_ptr<Establishment>>& get_establishments() const {
+        return map_nodes;
+    }
+
+    AlertLevel get_alert_level() const {
+        return current_alert_level;
+    }
 };

@@ -1,5 +1,4 @@
 #include "RoutePlanner.h"
-#include <iostream>
 
 using namespace std;
 
@@ -7,7 +6,6 @@ RoutePlanner::RoutePlanner() : current_alert_level(AlertLevel::None) {}
 
 void RoutePlanner::set_alert_level(AlertLevel level) {
     current_alert_level = level;
-    cout << "Alert level updated." << endl;
 }
 
 void RoutePlanner::add_establishment(shared_ptr<Establishment> est) {
