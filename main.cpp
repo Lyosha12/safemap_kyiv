@@ -14,10 +14,15 @@
 #include "Establishments.h"
 #include "Infrastructure.h"
 #include "Crowdsourcing.h"
+#include <windows.h>
 
 using json = nlohmann::json;
 
 int main() {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
+#endif
     RoutePlanner planner;
 
     auto silpo = std::make_shared<Supermarket>(
