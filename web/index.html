@@ -2,183 +2,202 @@
 <html lang="uk">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SafeMap Kyiv — Оперативний моніторинг</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0B0D12">
+    <title>SafeMap — укриття та безпечні маршрути</title>
+    <link rel="icon" href="img/logo.svg" type="image/svg+xml">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
 
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="js/tailwind.config.js"></script>
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
-
-    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css">
+    <link rel="stylesheet" href="css/style.css">
 </head>
-<body class="h-screen w-screen overflow-hidden flex bg-zinc-900 text-zinc-800 font-sans antialiased">
+<body>
 
-<aside class="w-[400px] h-full flex flex-col bg-white border-r border-zinc-200 shadow-2xl z-30 transition-all duration-300">
-    <div class="p-6 border-b border-zinc-100 flex items-center justify-between bg-gradient-to-b from-zinc-50/50 to-white">
-        <div class="flex items-center space-x-3.5">
-            <img src="img/logo.svg" alt="SafeMap" class="brand-logo rounded-2xl shadow-lg transform hover:rotate-6 transition duration-300">
-            <div>
-                <h1 class="text-base font-extrabold text-zinc-900 tracking-tight flex items-center gap-1.5">
-                    SafeMap Kyiv
-                    <span class="text-[9px] uppercase px-1.5 py-0.5 rounded-md bg-primary-50 text-primary-700 font-bold border border-primary-100">Live</span>
-                </h1>
-                <p class="text-xs text-zinc-400 font-medium">Цивільний захист & Навігація</p>
-            </div>
+<header class="topbar">
+    <div class="brand">
+        <img src="img/logo.svg" alt="" class="brand-logo">
+        <div class="brand-text">
+            <h1>SafeMap</h1>
+            <p>Укриття та безпечні маршрути</p>
         </div>
-        <button id="refreshBtn" class="p-2.5 text-zinc-400 hover:text-primary-600 hover:bg-primary-50 rounded-xl transition-all duration-200">
-            <svg class="w-4 h-4 transition-transform active:rotate-180 duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+    </div>
+
+    <div class="alert-switch" id="alertSwitch" role="radiogroup" aria-label="Рівень тривоги">
+        <button class="alert-option" data-level="none" role="radio">
+            <span class="dot"></span><span class="label">Відбій</span>
+        </button>
+        <button class="alert-option" data-level="yellow" role="radio">
+            <span class="dot"></span><span class="label">Готовність</span>
+        </button>
+        <button class="alert-option" data-level="red" role="radio">
+            <span class="dot"></span><span class="label">Тривога</span>
         </button>
     </div>
 
-    <div class="p-6 flex-1 overflow-y-auto space-y-6">
-        <div class="bg-zinc-50 p-4 rounded-2xl border border-zinc-200/70 shadow-sm transition hover:border-zinc-300">
-            <div class="flex items-center justify-between mb-2">
-                <label class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Оперативний стан</label>
-                <span class="relative flex h-2 w-2">
-                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                        <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-            </div>
-            <select id="alertSelect" class="w-full bg-white border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-zinc-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition">
-                <option value="none">🟢 Штатний режим (Відбій)</option>
-                <option value="yellow">🟡 Жовтий рівень (Готовність)</option>
-                <option value="red">🔴 Червоний рівень (Тривога)</option>
-            </select>
-            <p id="alertDesc" class="mt-2.5 text-[11px] text-zinc-500 font-medium leading-relaxed">
-                🟢 Усі об'єкти функціонують у стандартному режимі.
-            </p>
-        </div>
+    <button id="refreshBtn" class="icon-btn" title="Оновити дані" aria-label="Оновити дані">
+        <svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.9-3.9M4 4v4h4M4 13a8 8 0 0 0 14.9 3.9M20 20v-4h-4"/></svg>
+    </button>
+</header>
 
-        <div class="grid grid-cols-2 gap-3">
-            <button id="btnOpenReport" class="flex items-center justify-center space-x-2 bg-zinc-900 hover:bg-zinc-800 active:scale-[0.98] text-white text-xs font-semibold py-3 px-4 rounded-xl shadow-md transition-all duration-200">
-                <span>📝</span>
-                <span>Звіт диспетчера</span>
+<div id="alertBanner" class="alert-banner" hidden>
+    <span class="alert-banner-icon">⚠</span>
+    <span class="alert-banner-text">Повітряна тривога. Прямуйте до найближчого укриття.</span>
+    <button id="btnBannerShelter" class="btn btn-yellow btn-sm">Знайти укриття</button>
+</div>
+
+<div class="layout">
+    <aside class="sidebar" id="sidebar">
+        <button class="sheet-handle" id="sheetHandle" aria-label="Розгорнути панель"><span></span></button>
+
+        <section class="panel-section">
+            <p id="alertDesc" class="alert-desc"></p>
+
+            <div class="action-row">
+                <button id="btnToggleNav" class="btn btn-blue btn-grow">
+                    <svg viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z"/></svg>
+                    <span id="navBtnText">Навігатор</span>
+                </button>
+                <button id="btnLocateMe" class="btn btn-ghost" title="Маршрут від мого місцезнаходження">
+                    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg>
+                </button>
+            </div>
+
+            <div class="segmented" id="travelModeToggle">
+                <button data-mode="walk" class="segment active">Пішки</button>
+                <button data-mode="drive" class="segment">Авто</button>
+            </div>
+
+            <div id="navBanner" class="hint" hidden>
+                Клікніть на мапі, щоб прокласти маршрут до найближчого укриття.
+            </div>
+        </section>
+
+        <section class="panel-section">
+            <div class="search">
+                <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+                <input id="searchInput" type="search" placeholder="Пошук за назвою або адресою" autocomplete="off">
+            </div>
+            <div class="chips" id="typeFilters"></div>
+            <label class="switch-row">
+                <input type="checkbox" id="onlyOpen">
+                <span class="switch"></span>
+                <span>Лише відчинені зараз</span>
+            </label>
+        </section>
+
+        <section class="panel-section list-section">
+            <div class="list-header">
+                <h2>Локації</h2>
+                <span id="countBadge" class="count">0</span>
+            </div>
+            <div id="locationsList" class="locations">
+                <div class="empty">Завантаження даних…</div>
+            </div>
+        </section>
+
+        <footer class="sidebar-footer">
+            <button id="btnOpenReport" class="btn btn-outline btn-block">
+                <svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13 7l4 4"/></svg>
+                Надіслати звіт про стан
             </button>
-            <button id="btnToggleNav" class="flex items-center justify-center space-x-2 bg-primary-600 hover:bg-primary-700 active:scale-[0.98] text-white text-xs font-semibold py-3 px-4 rounded-xl shadow-md shadow-primary-500/20 transition-all duration-200">
-                <span>🧭</span>
-                <span id="navBtnText">Навігатор</span>
-            </button>
+        </footer>
+    </aside>
+
+    <main class="map-wrap">
+        <div id="map"></div>
+
+        <div class="legend">
+            <span><i class="legend-dot shelter"></i>Укриття</span>
+            <span><i class="legend-dot with-shelter"></i>Заклад з укриттям</span>
+            <span><i class="legend-dot place"></i>Заклад</span>
+            <span><i class="legend-dot closed"></i>Зачинено</span>
         </div>
 
-        <div class="flex items-center gap-2">
-            <div id="travelModeToggle" class="flex-1 grid grid-cols-2 p-1 bg-zinc-100 rounded-xl border border-zinc-200/70 text-xs font-semibold">
-                <button data-mode="walk" class="mode-btn py-2 rounded-lg transition bg-white shadow-sm text-zinc-900">🚶 Пішки</button>
-                <button data-mode="drive" class="mode-btn py-2 rounded-lg transition text-zinc-500">🚗 Авто</button>
+        <div id="routeCard" class="route-card" hidden>
+            <div class="route-card-head">
+                <div>
+                    <span id="routeBadgeText" class="route-badge">Маршрут розраховано</span>
+                    <h4 id="routeTargetName">—</h4>
+                </div>
+                <button id="btnCloseRoute" class="icon-btn small" aria-label="Закрити маршрут">✕</button>
             </div>
-            <button id="btnLocateMe" title="Маршрут від мого місцезнаходження" class="p-2.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200/70 rounded-xl text-sm transition">📍</button>
-        </div>
-
-        <div id="navBanner" class="hidden p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-900 text-xs font-medium flex items-center space-x-2.5 animate-pulse">
-            <span class="text-base">📍</span>
-            <span>Клікніть на карті для розрахунку шляху до найближчого укриття.</span>
-        </div>
-
-        <div>
-            <div class="flex items-center justify-between mb-3 px-1">
-                <h2 class="text-[11px] font-bold uppercase tracking-wider text-zinc-400">Моніторинг локацій</h2>
-                <span id="countBadge" class="bg-zinc-100 text-zinc-700 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-zinc-200/60">0</span>
+            <div class="route-stats">
+                <div><span class="stat-label">Відстань</span><span id="routeDistance" class="stat-value">—</span></div>
+                <div><span id="routeTimeLabel" class="stat-label">Пішки</span><span id="routeTime" class="stat-value accent">—</span></div>
+                <div><span class="stat-label">Вільних місць</span><span id="routePlaces" class="stat-value">0</span></div>
             </div>
-            <div id="locationsList" class="space-y-2.5">
-                <div class="text-center py-8 text-xs text-zinc-400 font-medium">Синхронізація з C++...</div>
-            </div>
+            <p id="routeSource" class="route-source"></p>
         </div>
-    </div>
-</aside>
+    </main>
+</div>
 
-<main class="flex-1 h-full relative">
-    <div id="map" class="w-full h-full z-0"></div>
-
-    <div id="routeCard" class="hidden absolute top-6 right-6 z-20 w-84 bg-white/95 backdrop-blur-md border border-zinc-200 rounded-2xl p-4 shadow-xl transition-all duration-300">
-        <div class="flex items-start justify-between">
+<div id="detailsModal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="detailsName">
+        <div class="modal-head">
             <div>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60 mb-1.5">
-                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        <span id="routeBadgeText">Маршрут розраховано</span>
-                    </span>
-                <h4 id="routeTargetName" class="text-xs font-bold text-zinc-900 line-clamp-1">—</h4>
+                <span id="detailsType" class="modal-kicker"></span>
+                <h3 id="detailsName">Деталі</h3>
             </div>
-            <button id="btnCloseRoute" class="text-zinc-400 hover:text-zinc-600 p-1">✕</button>
+            <button class="icon-btn small modal-close" aria-label="Закрити">✕</button>
         </div>
-        <div class="mt-3.5 grid grid-cols-3 gap-2 text-center text-xs">
-            <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
-                <span class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Відстань</span>
-                <span id="routeDistance" class="font-extrabold text-zinc-800 text-xs">—</span>
-            </div>
-            <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
-                <span id="routeTimeLabel" class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Пішки</span>
-                <span id="routeTime" class="font-extrabold text-zinc-800 text-xs">—</span>
-            </div>
-            <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
-                <span class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Вільних місць</span>
-                <span id="routePlaces" class="font-extrabold text-primary-600 text-xs">0</span>
-            </div>
-        </div>
-        <p id="routeSource" class="mt-2.5 text-[10px] text-zinc-400 font-medium"></p>
-    </div>
-</main>
-
-<div id="detailsModal" class="hidden fixed inset-0 z-[9999] bg-zinc-950/60 backdrop-blur-md items-center justify-center p-4">
-    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-pop">
-        <div class="p-6 border-b border-zinc-100 flex items-center justify-between">
-            <h3 id="detailsName" class="font-extrabold text-zinc-900 text-sm">Деталі об'єкта</h3>
-            <button class="modal-close text-zinc-400 hover:text-zinc-600 p-1 text-sm font-bold">✕</button>
-        </div>
-        <div id="detailsBody" class="p-6 space-y-3.5 text-xs text-zinc-600"></div>
-        <div class="p-4 bg-zinc-50 border-t border-zinc-100 flex justify-end">
-            <button class="modal-close bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-bold px-5 py-2.5 rounded-xl transition">Закрити</button>
+        <div id="detailsBody" class="modal-body"></div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost modal-close">Закрити</button>
         </div>
     </div>
 </div>
 
-<div id="reportModal" class="hidden fixed inset-0 z-[9999] bg-zinc-950/60 backdrop-blur-md items-center justify-center p-4">
-    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-pop">
-        <div class="p-6 border-b border-zinc-100 flex items-center justify-between">
-            <h3 class="font-extrabold text-zinc-900 text-sm flex items-center gap-2">
-                <span>📝</span> Краудсорсинговий звіт
-            </h3>
-            <button class="modal-close text-zinc-400 hover:text-zinc-600 p-1 text-sm font-bold">✕</button>
-        </div>
-        <div class="p-6 space-y-4">
+<div id="reportModal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reportTitle">
+        <div class="modal-head">
             <div>
-                <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Локація</label>
-                <select id="reportEstSelect" class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition"></select>
+                <span class="modal-kicker">Краудсорсинг</span>
+                <h3 id="reportTitle">Звіт про стан локації</h3>
             </div>
-            <div class="flex items-center justify-between p-3.5 bg-zinc-50 rounded-2xl border border-zinc-200/80">
-                <div>
-                    <span class="text-xs font-bold text-zinc-800 block">Генератор (Резервне живлення)</span>
-                    <span class="text-[10px] text-zinc-400">Чи працює електрика на локації</span>
-                </div>
-                <input type="checkbox" id="reportGenerator" checked class="w-5 h-5 accent-primary-600 rounded cursor-pointer">
-            </div>
-            <div class="flex items-center justify-between p-3.5 bg-rose-50 rounded-2xl border border-rose-200/80">
-                <div>
-                    <span class="text-xs font-bold text-rose-800 block">Небезпека / шлях заблоковано</span>
-                    <span class="text-[10px] text-rose-500">Заклад буде позначено як зачинений</span>
-                </div>
-                <input type="checkbox" id="reportHazard" class="w-5 h-5 accent-rose-600 rounded cursor-pointer">
-            </div>
-            <div>
-                <label class="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Зміна кількості людей в укритті</label>
-                <input type="number" id="reportOccupancy" value="10" step="5" class="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-3.5 py-2.5 text-xs font-semibold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 transition">
-            </div>
+            <button class="icon-btn small modal-close" aria-label="Закрити">✕</button>
         </div>
-        <p id="reportFeedback" class="hidden px-6 pb-4 text-[11px] font-semibold"></p>
-        <div class="p-4 bg-zinc-50 border-t border-zinc-100 flex justify-end space-x-2.5">
-            <button class="modal-close bg-zinc-200 hover:bg-zinc-300 text-zinc-800 text-xs font-bold px-4 py-2.5 rounded-xl transition">Скасувати</button>
-            <button id="btnSubmitReport" class="bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md shadow-primary-500/20 transition">Надіслати на сервер</button>
+        <div class="modal-body">
+            <label class="field">
+                <span>Локація</span>
+                <select id="reportEstSelect"></select>
+            </label>
+            <label class="toggle-card">
+                <div>
+                    <strong>Генератор працює</strong>
+                    <small>Чи є електрика на локації</small>
+                </div>
+                <input type="checkbox" id="reportGenerator" checked>
+                <span class="switch"></span>
+            </label>
+            <label class="toggle-card danger">
+                <div>
+                    <strong>Небезпека / шлях заблоковано</strong>
+                    <small>Локацію буде позначено як зачинену</small>
+                </div>
+                <input type="checkbox" id="reportHazard">
+                <span class="switch"></span>
+            </label>
+            <label class="field">
+                <span>Зміна кількості людей в укритті</span>
+                <input type="number" id="reportOccupancy" value="10" step="5">
+            </label>
+            <p id="reportFeedback" class="feedback" hidden></p>
+        </div>
+        <div class="modal-foot">
+            <button class="btn btn-ghost modal-close">Скасувати</button>
+            <button id="btnSubmitReport" class="btn btn-blue">Надіслати</button>
         </div>
     </div>
 </div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-
 <script src="js/app.js"></script>
 </body>
 </html>

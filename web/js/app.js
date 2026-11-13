@@ -1,138 +1,262 @@
-const map = L.map('map', { zoomControl: false }).setView([50.4470, 30.5210], 14);
-L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-}).addTo(map);
-
-let markersLayer = L.layerGroup().addTo(map);
-let userMarker = null;
-let routingControl = null;
-let establishmentsData = [];
-let isNavMode = false;
-
-async function loadData() {
-    try {
-        const res = await fetch('/api/establishments');
-        establishmentsData = await res.json();
-
-        markersLayer.clearLayers();
-        const listEl = document.getElementById('locationsList');
-        const selectEl = document.getElementById('reportEstSelect');
-        document.getElementById('countBadge').innerText = establishmentsData.length;
-        listEl.innerHTML = '';
-        selectEl.innerHTML = '';
-
-        establishmentsData.forEach(item => {
-            const markerColor = item.accessible ? '#10b981' : '#f43f5e';
-            const customIcon = L.divIcon({
-                className: 'custom-pin',
-                html: `<div style="background-color: ${markerColor}; width: 14px; height: 14px; border: 3px solid white; border-radius: 9999px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);"></div>`,
-                iconSize: [14, 14],
-                iconAnchor: [7, 7]
-            });
-
-            const marker = L.marker([item.lat, item.lng], { icon: customIcon }).addTo(markersLayer);
-
-            const badge = item.accessible
-                ? `<span class="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200/80">ВІДЧИНЕНО</span>`
-                : `<span class="px-2.5 py-0.5 rounded-full text-[9px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200/80">ЗАЧИНЕНО</span>`;
-
-            marker.bindPopup(`
-                <div class="p-1.5 text-center font-sans">
-                    <h5 class="font-extrabold text-zinc-900 text-xs mb-0.5">${item.name}</h5>
-                    <p class="text-[10px] text-zinc-400 font-medium mb-2">${item.type}</p>
-                    <div class="mb-2.5">${badge}</div>
-                    <div class="text-[11px] text-zinc-600 mb-3">Місць в укритті: <b class="text-zinc-900">${item.shelter_free}</b> / ${item.shelter_capacity}</div>
-                    <button onclick="showDetails(${item.id})" class="w-full py-1.5 px-3 bg-zinc-900 hover:bg-zinc-800 text-white rounded-lg text-[10px] font-extrabold transition">Детальніше</button>
-                </div>
-            `);
-
-            const card = document.createElement('div');
-            card.className = "p-3.5 bg-white hover:bg-zinc-50/80 border border-zinc-200/70 hover:border-zinc-300 rounded-2xl cursor-pointer transition shadow-sm flex items-center justify-between";
-            card.innerHTML = `
-                <div class="pr-2">
-                    <div class="font-bold text-xs text-zinc-800 line-clamp-1">${item.name}</div>
-                    <div class="text-[10px] text-zinc-400 font-medium mt-0.5">Вільних місць: <span class="font-bold text-zinc-700">${item.shelter_free}</span></div>
-                </div>
-                ${badge}
-            `;
-            card.onclick = () => {
-                map.flyTo([item.lat, item.lng], 16, { duration: 1.2 });
-                marker.openPopup();
-            };
-            listEl.appendChild(card);
-
-            const opt = document.createElement('option');
-            opt.value = item.id;
-            opt.textContent = item.name;
-            selectEl.appendChild(opt);
-        });
-
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-const alertDescriptions = {
-    'none': '🟢 Усі заклади функціонують у стандартному режимі.',
-    'yellow': '🟡 Жовтий рівень: перевірено резервне живлення, чергування персоналу.',
-    'red': '🔴 Червоний рівень: відкриті виключно сертифіковані укриття!'
-};
-
-async function syncAlertLevel() {
-    try {
-        const res = await fetch('/api/alert');
-        const { level } = await res.json();
-        document.getElementById('alertSelect').value = level;
-        document.getElementById('alertDesc').innerText = alertDescriptions[level];
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-document.getElementById('alertSelect').addEventListener('change', async (e) => {
-    const level = e.target.value;
-    document.getElementById('alertDesc').innerText = alertDescriptions[level];
-
-    await fetch('/api/alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ level })
-    });
-    loadData();
-});
-
-const navBtn = document.getElementById('btnToggleNav');
-const navBanner = document.getElementById('navBanner');
-
-navBtn.addEventListener('click', () => {
-    isNavMode = !isNavMode;
-    if (isNavMode) {
-        navBtn.classList.replace('bg-primary-600', 'bg-amber-500');
-        navBtn.classList.replace('hover:bg-primary-700', 'hover:bg-amber-600');
-        document.getElementById('navBtnText').innerText = "Вимкнути";
-        navBanner.classList.remove('hidden');
-    } else {
-        navBtn.classList.replace('bg-amber-500', 'bg-primary-600');
-        navBtn.classList.replace('hover:bg-amber-600', 'hover:bg-primary-700');
-        document.getElementById('navBtnText').innerText = "Навігатор";
-        navBanner.classList.add('hidden');
-        clearNavigation();
-    }
-});
+const DEFAULT_VIEW = { center: [50.4470, 30.5210], zoom: 13 };
 
 const ROUTERS = {
     walk: { url: 'https://routing.openstreetmap.de/routed-foot/route/v1', label: 'Пішки' },
     drive: { url: 'https://routing.openstreetmap.de/routed-car/route/v1', label: 'Авто' }
 };
-const ROUTE_COLOR = '#4f46e5';
+const ROUTE_COLOR = '#4C9BFF';
 
-let travelMode = 'walk';
-let routeOrigin = null;
+const ALERT_DESCRIPTIONS = {
+    none: 'Відбій. Усі заклади працюють у звичайному режимі.',
+    yellow: 'Готовність. Працюють заклади з резервним живленням, персонал чергує.',
+    red: 'Повітряна тривога. Відчинені лише укриття та цілодобові заклади з генератором.'
+};
+
+const TYPE_ICONS = {
+    shelter: '<path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z"/>',
+    supermarket: '<path d="M3 4h2.5l2.2 10.5h10.6L20.5 7H6.3"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+    pharmacy: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/>',
+    post_office: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 8l9 6 9-6"/>',
+    cafe: '<path d="M4 9h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3.5v2M12 3.5v2"/>',
+    gas_station: '<rect x="5" y="4" width="9" height="16" rx="1.5"/><path d="M7.5 8h4"/><path d="M14 10h2l2.5 2.5V18a1.5 1.5 0 0 1-3 0v-3H14"/>',
+    default: '<circle cx="12" cy="10" r="3"/><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/>'
+};
+
+const TYPE_LABELS_PLURAL = {
+    shelter: 'Укриття',
+    supermarket: 'Супермаркети',
+    pharmacy: 'Аптеки',
+    post_office: 'Пошта',
+    cafe: 'Кафе',
+    gas_station: 'АЗС'
+};
+
+const state = {
+    establishments: [],
+    markers: new Map(),
+    alertLevel: 'none',
+    typeFilter: 'all',
+    search: '',
+    onlyOpen: false,
+    isNavMode: false,
+    travelMode: 'walk',
+    routeOrigin: null,
+    routeRequestId: 0,
+    hasFittedBounds: false
+};
+
+const $ = (id) => document.getElementById(id);
+
+const map = L.map('map', { zoomControl: false }).setView(DEFAULT_VIEW.center, DEFAULT_VIEW.zoom);
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    className: 'dark-tiles',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+}).addTo(map);
+
+const markersLayer = L.layerGroup().addTo(map);
+let userMarker = null;
+let routingControl = null;
 let fallbackLine = null;
-let routeRequestId = 0;
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function iconSvg(typeKey) {
+    return `<svg viewBox="0 0 24 24">${TYPE_ICONS[typeKey] || TYPE_ICONS.default}</svg>`;
+}
+
+function markerVariant(item) {
+    if (!item.accessible) return 'closed';
+    if (item.type_key === 'shelter') return 'shelter';
+    return item.shelter_capacity > 0 ? 'with-shelter' : 'place';
+}
+
+function createMarkerIcon(item) {
+    return L.divIcon({
+        className: '',
+        html: `<div class="map-pin ${markerVariant(item)}">${iconSvg(item.type_key)}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 34],
+        popupAnchor: [0, -32]
+    });
+}
+
+function statusBadge(item) {
+    return item.accessible
+        ? '<span class="status open">Відчинено</span>'
+        : '<span class="status closed">Зачинено</span>';
+}
+
+function shelterText(item) {
+    return item.shelter_capacity > 0
+        ? `укриття: <b>${item.shelter_free}</b> / ${item.shelter_capacity}`
+        : 'без укриття';
+}
+
+let toastTimer = null;
+function showToast(message, kind = 'info') {
+    const toast = $('toast');
+    toast.textContent = message;
+    toast.className = `toast ${kind === 'error' ? 'error' : ''}`;
+    toast.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+}
+
+function matchesFilters(item) {
+    if (state.typeFilter !== 'all' && item.type_key !== state.typeFilter) return false;
+    if (state.onlyOpen && !item.accessible) return false;
+    if (state.search) {
+        const haystack = `${item.name} ${item.address || ''} ${item.type}`.toLowerCase();
+        if (!haystack.includes(state.search)) return false;
+    }
+    return true;
+}
+
+function sortForList(a, b) {
+    if (a.accessible !== b.accessible) return a.accessible ? -1 : 1;
+    if ((a.type_key === 'shelter') !== (b.type_key === 'shelter')) return a.type_key === 'shelter' ? -1 : 1;
+    return a.name.localeCompare(b.name, 'uk');
+}
+
+function renderTypeFilters() {
+    const counts = new Map();
+    state.establishments.forEach(item => counts.set(item.type_key, (counts.get(item.type_key) || 0) + 1));
+    if (state.typeFilter !== 'all' && !counts.has(state.typeFilter)) state.typeFilter = 'all';
+
+    const chips = [['all', 'Усі', state.establishments.length], ...[...counts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([key, count]) => [key, TYPE_LABELS_PLURAL[key] || key, count])];
+
+    $('typeFilters').innerHTML = chips.map(([key, label, count]) => `
+        <button class="chip ${state.typeFilter === key ? 'active' : ''}" data-type="${escapeHtml(key)}">
+            ${escapeHtml(label)} <span class="chip-count">${count}</span>
+        </button>`).join('');
+}
+
+function popupHtml(item) {
+    return `
+        <div class="popup-type">${escapeHtml(item.type)}</div>
+        <div class="popup-name">${escapeHtml(item.name)}</div>
+        <div class="popup-row">${statusBadge(item)}<span>${shelterText(item)}</span></div>
+        <button class="btn btn-ghost btn-sm btn-block" onclick="showDetails(${item.id})">Детальніше</button>`;
+}
+
+function renderMap() {
+    markersLayer.clearLayers();
+    state.markers.clear();
+    state.establishments.filter(matchesFilters).forEach(item => {
+        const marker = L.marker([item.lat, item.lng], {
+            icon: createMarkerIcon(item),
+            title: item.name,
+            zIndexOffset: item.type_key === 'shelter' ? 500 : 0
+        }).bindPopup(popupHtml(item));
+        marker.addTo(markersLayer);
+        state.markers.set(item.id, marker);
+    });
+}
+
+function renderList() {
+    const visible = state.establishments.filter(matchesFilters).sort(sortForList);
+    $('countBadge').textContent = visible.length;
+
+    if (!visible.length) {
+        $('locationsList').innerHTML = '<div class="empty">Нічого не знайдено за цими фільтрами</div>';
+        return;
+    }
+
+    $('locationsList').innerHTML = visible.map(item => `
+        <button class="location-card ${item.accessible ? '' : 'closed'}" data-id="${item.id}">
+            <span class="type-icon ${item.type_key === 'shelter' ? 'shelter' : ''}">${iconSvg(item.type_key)}</span>
+            <span class="location-main">
+                <span class="location-name">${escapeHtml(item.name)}</span>
+                <span class="location-meta">${escapeHtml(item.type)} · ${shelterText(item)}</span>
+            </span>
+            ${statusBadge(item)}
+        </button>`).join('');
+}
+
+function renderReportOptions() {
+    const select = $('reportEstSelect');
+    const selected = select.value;
+    select.innerHTML = [...state.establishments]
+        .sort((a, b) => a.name.localeCompare(b.name, 'uk'))
+        .map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`)
+        .join('');
+    if (selected) select.value = selected;
+}
+
+function renderAll() {
+    renderTypeFilters();
+    renderMap();
+    renderList();
+    renderReportOptions();
+}
+
+function fitToData() {
+    if (state.hasFittedBounds || !state.establishments.length) return;
+    const bounds = L.latLngBounds(state.establishments.map(item => [item.lat, item.lng]));
+    map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    state.hasFittedBounds = true;
+}
+
+async function loadData() {
+    try {
+        const res = await fetch('/api/establishments');
+        if (!res.ok) throw new Error();
+        state.establishments = await res.json();
+        renderAll();
+        fitToData();
+    } catch (err) {
+        $('locationsList').innerHTML = '<div class="empty">Не вдалося завантажити дані з сервера</div>';
+        showToast('Сервер SafeMap недоступний', 'error');
+    }
+}
+
+function applyAlertLevel(level) {
+    state.alertLevel = level;
+    document.querySelectorAll('.alert-option').forEach(btn => {
+        const active = btn.dataset.level === level;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-checked', active);
+    });
+    $('alertDesc').textContent = ALERT_DESCRIPTIONS[level];
+    $('alertDesc').dataset.level = level;
+    $('alertBanner').hidden = level !== 'red';
+    setTimeout(() => map.invalidateSize(), 0);
+}
+
+async function syncAlertLevel() {
+    try {
+        const res = await fetch('/api/alert');
+        const { level } = await res.json();
+        applyAlertLevel(level);
+    } catch (err) {
+        applyAlertLevel('none');
+    }
+}
+
+async function changeAlertLevel(level) {
+    const previous = state.alertLevel;
+    applyAlertLevel(level);
+    try {
+        const res = await fetch('/api/alert', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ level })
+        });
+        if (!res.ok) throw new Error();
+        await loadData();
+    } catch (err) {
+        applyAlertLevel(previous);
+        showToast('Не вдалося змінити рівень тривоги', 'error');
+    }
+}
 
 function formatDistance(km) {
     return km < 1 ? `${Math.round(km * 1000)} м` : `${km.toFixed(1)} км`;
@@ -145,7 +269,7 @@ function formatDuration(minutes) {
 }
 
 function clearRoute() {
-    routeRequestId++;
+    state.routeRequestId++;
     if (routingControl) {
         map.removeControl(routingControl);
         routingControl = null;
@@ -158,50 +282,49 @@ function clearRoute() {
         map.removeLayer(userMarker);
         userMarker = null;
     }
-    document.getElementById('routeCard').classList.add('hidden');
+    $('routeCard').hidden = true;
 }
 
 function clearNavigation() {
     clearRoute();
-    routeOrigin = null;
+    state.routeOrigin = null;
 }
 
 function showRouteCard(shelter, distanceKm, minutes, sourceText, isEstimate = false) {
-    document.getElementById('routeBadgeText').innerText = isEstimate ? 'Приблизна оцінка' : 'Маршрут розраховано';
-    document.getElementById('routeTargetName').innerText = shelter.name;
-    document.getElementById('routeDistance').innerText = formatDistance(distanceKm);
-    document.getElementById('routeTimeLabel').innerText = ROUTERS[travelMode].label;
-    document.getElementById('routeTime').innerText = formatDuration(minutes);
-    document.getElementById('routePlaces').innerText = shelter.free_places;
-    document.getElementById('routeSource').innerText = sourceText;
-    document.getElementById('routeCard').classList.remove('hidden');
+    const badge = $('routeBadgeText');
+    badge.textContent = isEstimate ? 'Приблизна оцінка' : 'Маршрут розраховано';
+    badge.classList.toggle('estimate', isEstimate);
+    $('routeTargetName').textContent = shelter.name;
+    $('routeDistance').textContent = formatDistance(distanceKm);
+    $('routeTimeLabel').textContent = ROUTERS[state.travelMode].label;
+    $('routeTime').textContent = formatDuration(minutes);
+    $('routePlaces').textContent = shelter.free_places;
+    $('routeSource').textContent = sourceText;
+    $('routeCard').hidden = false;
 }
 
 function showEstimatedRoute(origin, shelter) {
-    const estimate = shelter.estimates[travelMode];
+    const estimate = shelter.estimates[state.travelMode];
     fallbackLine = L.polyline([[origin.lat, origin.lng], [shelter.lat, shelter.lng]], {
         color: ROUTE_COLOR,
         weight: 4,
-        opacity: 0.8,
+        opacity: 0.85,
         dashArray: '6 10'
     }).addTo(map);
-    map.fitBounds(fallbackLine.getBounds(), { padding: [60, 60] });
+    map.fitBounds(fallbackLine.getBounds(), { padding: [80, 80], maxZoom: 17 });
     showRouteCard(shelter, estimate.distance_km, estimate.minutes,
         'Сервіс маршрутів недоступний — приблизна оцінка (пряма відстань з поправкою на вулиці)', true);
 }
 
 async function buildRoute(origin) {
     clearRoute();
-    routeOrigin = origin;
-    const requestId = routeRequestId;
+    state.routeOrigin = origin;
+    const requestId = state.routeRequestId;
 
-    userMarker = L.circleMarker([origin.lat, origin.lng], {
-        radius: 7,
-        fillColor: ROUTE_COLOR,
-        color: '#ffffff',
-        weight: 3,
-        fillOpacity: 1
-    }).addTo(map).bindPopup("Ви тут").openPopup();
+    userMarker = L.marker([origin.lat, origin.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="user-pin"></div>', iconSize: [18, 18], iconAnchor: [9, 9] }),
+        zIndexOffset: 1000
+    }).addTo(map).bindTooltip('Ви тут', { direction: 'top', offset: [0, -10] });
 
     let shelter;
     try {
@@ -209,38 +332,45 @@ async function buildRoute(origin) {
         shelter = await res.json();
         if (!res.ok) throw new Error(shelter.error);
     } catch (err) {
-        alert(err.message || 'Не вдалося зв\'язатися з сервером');
+        showToast(err.message || 'Не вдалося зв\'язатися з сервером', 'error');
         return;
     }
-    if (requestId !== routeRequestId) return;
+    if (requestId !== state.routeRequestId) return;
     if (!shelter.found) {
-        alert(shelter.message);
+        showToast(shelter.message, 'error');
         return;
     }
 
     routingControl = L.Routing.control({
         waypoints: [L.latLng(origin.lat, origin.lng), L.latLng(shelter.lat, shelter.lng)],
         router: L.Routing.osrmv1({
-            serviceUrl: ROUTERS[travelMode].url,
+            serviceUrl: ROUTERS[state.travelMode].url,
             profile: 'driving',
             timeout: 10000
         }),
-        lineOptions: { styles: [{ color: ROUTE_COLOR, weight: 5, opacity: 0.9 }] },
+        lineOptions: {
+            styles: [
+                { color: '#0B0D12', weight: 9, opacity: 0.6 },
+                { color: ROUTE_COLOR, weight: 5, opacity: 0.95 }
+            ]
+        },
+        createMarker: () => null,
         addWaypoints: false,
         draggableWaypoints: false,
-        fitSelectedRoutes: true,
+        fitSelectedRoutes: false,
         show: false
     }).addTo(map);
 
     routingControl.on('routesfound', (e) => {
-        if (requestId !== routeRequestId) return;
+        if (requestId !== state.routeRequestId) return;
+        map.fitBounds(L.latLngBounds(e.routes[0].coordinates), { padding: [80, 80], maxZoom: 17 });
         const summary = e.routes[0].summary;
         showRouteCard(shelter, summary.totalDistance / 1000, summary.totalTime / 60,
             'Маршрут вулицями: OSRM, дані © OpenStreetMap');
     });
 
     routingControl.on('routingerror', () => {
-        if (requestId !== routeRequestId) return;
+        if (requestId !== state.routeRequestId) return;
         map.removeControl(routingControl);
         routingControl = null;
         showEstimatedRoute(origin, shelter);
@@ -248,123 +378,189 @@ async function buildRoute(origin) {
 }
 
 function setTravelMode(mode) {
-    travelMode = mode;
-    document.querySelectorAll('#travelModeToggle .mode-btn').forEach(btn => {
-        const active = btn.dataset.mode === mode;
-        btn.classList.toggle('bg-white', active);
-        btn.classList.toggle('shadow-sm', active);
-        btn.classList.toggle('text-zinc-900', active);
-        btn.classList.toggle('text-zinc-500', !active);
+    state.travelMode = mode;
+    document.querySelectorAll('#travelModeToggle .segment').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
     });
-    if (routeOrigin) buildRoute(routeOrigin);
+    if (state.routeOrigin) buildRoute(state.routeOrigin);
 }
 
-document.querySelectorAll('#travelModeToggle .mode-btn').forEach(btn => {
-    btn.addEventListener('click', () => setTravelMode(btn.dataset.mode));
-});
+function setNavMode(enabled) {
+    state.isNavMode = enabled;
+    $('btnToggleNav').classList.toggle('active', enabled);
+    $('navBtnText').textContent = enabled ? 'Вимкнути навігатор' : 'Навігатор';
+    $('navBanner').hidden = !enabled;
+    map.getContainer().style.cursor = enabled ? 'crosshair' : '';
+    if (!enabled) clearNavigation();
+}
 
-document.getElementById('btnLocateMe').addEventListener('click', () => {
+function routeFromMyLocation() {
     if (!navigator.geolocation) {
-        alert('Браузер не підтримує визначення місцезнаходження');
+        showToast('Браузер не підтримує визначення місцезнаходження', 'error');
         return;
     }
     navigator.geolocation.getCurrentPosition(
         (pos) => buildRoute({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => alert('Не вдалося визначити місцезнаходження. Дозвольте доступ до геолокації або клікніть на мапі в режимі навігатора.'),
+        () => showToast('Не вдалося визначити місцезнаходження. Увімкніть навігатор і клікніть на мапі.', 'error'),
         { enableHighAccuracy: true, timeout: 10000 }
     );
-});
-
-map.on('click', (e) => {
-    if (!isNavMode) return;
-    buildRoute({ lat: e.latlng.lat, lng: e.latlng.lng });
-});
-
-document.getElementById('btnCloseRoute').onclick = clearNavigation;
+}
 
 function openModal(id) {
-    const el = document.getElementById(id);
-    el.classList.remove('hidden');
-    el.classList.add('flex');
+    $(id).hidden = false;
 }
 
-function closeModal(id) {
-    const el = document.getElementById(id);
-    el.classList.remove('flex');
-    el.classList.add('hidden');
+function closeModals() {
+    $('detailsModal').hidden = true;
+    $('reportModal').hidden = true;
 }
 
-window.showDetails = function(id) {
-    const item = establishmentsData.find(x => x.id === id);
+function detailRow(label, value, cls = '') {
+    return `<div class="detail-row"><span>${label}</span><span class="${cls}">${value}</span></div>`;
+}
+
+window.showDetails = function (id) {
+    const item = state.establishments.find(x => x.id === id);
     if (!item) return;
 
-    document.getElementById('detailsName').innerText = item.name;
-    document.getElementById('detailsBody').innerHTML = `
-        <div class="flex justify-between py-2 border-b border-zinc-100">
-            <span class="text-zinc-400 font-medium">Тип закладу:</span>
-            <span class="font-bold text-zinc-800">${item.type}</span>
-        </div>
-        <div class="flex justify-between py-2 border-b border-zinc-100">
-            <span class="text-zinc-400 font-medium">Резервне живлення:</span>
-            <span class="font-bold ${item.generator ? 'text-emerald-600' : 'text-zinc-400'}">${item.generator ? '✅ Підключено' : '❌ Відсутнє'}</span>
-        </div>
-        <div class="flex justify-between py-2 border-b border-zinc-100">
-            <span class="text-zinc-400 font-medium">Місткість укриття:</span>
-            <span class="font-bold text-zinc-800">${item.shelter_capacity} осіб</span>
-        </div>
-        <div class="flex justify-between py-2 border-b border-zinc-100">
-            <span class="text-zinc-400 font-medium">Вільних місць:</span>
-            <span class="font-extrabold text-primary-600">${item.shelter_free}</span>
-        </div>
-        <div class="flex justify-between py-2">
-            <span class="text-zinc-400 font-medium">Поточний статус:</span>
-            <span class="font-bold ${item.accessible ? 'text-emerald-600' : 'text-rose-600'}">${item.accessible ? 'Доступно для цивільних' : 'Зачинено через тривогу'}</span>
-        </div>
-    `;
+    $('detailsType').textContent = item.type;
+    $('detailsName').textContent = item.name;
+
+    const rows = [
+        detailRow('Статус', item.accessible ? 'Відчинено' : 'Зачинено', item.accessible ? 'good' : 'bad'),
+        item.address ? detailRow('Адреса', escapeHtml(item.address)) : '',
+        detailRow('Резервне живлення', item.generator ? 'Є генератор' : 'Немає', item.generator ? 'good' : ''),
+    ];
+
+    if (item.shelter_capacity > 0) {
+        const used = item.shelter_capacity - item.shelter_free;
+        const percent = Math.round(used / item.shelter_capacity * 100);
+        rows.push(
+            detailRow('Укриття', item.shelter_underground ? 'Підземне' : 'Наземне'),
+            detailRow('Вільних місць', `${item.shelter_free} з ${item.shelter_capacity}`, 'accent'),
+            `<div class="occupancy" title="Заповненість ${percent}%"><span style="width:${percent}%"></span></div>`
+        );
+    } else {
+        rows.push(detailRow('Укриття', 'Немає'));
+    }
+
+    if (item.source) rows.push(detailRow('Джерело даних', escapeHtml(item.source)));
+
+    $('detailsBody').innerHTML = rows.join('');
     openModal('detailsModal');
 };
 
-document.getElementById('btnOpenReport').onclick = () => {
-    document.getElementById('reportFeedback').classList.add('hidden');
-    openModal('reportModal');
-};
-
-document.querySelectorAll('.modal-close').forEach(btn => {
-    btn.onclick = () => {
-        closeModal('detailsModal');
-        closeModal('reportModal');
+async function submitReport() {
+    const feedback = $('reportFeedback');
+    const payload = {
+        id: parseInt($('reportEstSelect').value, 10),
+        generator: $('reportGenerator').checked,
+        occupied: parseInt($('reportOccupancy').value, 10) || 0,
+        hazard: $('reportHazard').checked
     };
-});
-
-document.getElementById('btnSubmitReport').addEventListener('click', async () => {
-    const estId = parseInt(document.getElementById('reportEstSelect').value);
-    const hasGen = document.getElementById('reportGenerator').checked;
-    const occDelta = parseInt(document.getElementById('reportOccupancy').value) || 0;
-    const hazard = document.getElementById('reportHazard').checked;
-    const feedback = document.getElementById('reportFeedback');
 
     try {
         const res = await fetch('/api/reports', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: estId, generator: hasGen, occupied: occDelta, hazard })
+            body: JSON.stringify(payload)
         });
         const data = await res.json();
         await loadData();
 
         if (!res.ok || data.warning) {
-            feedback.className = 'px-6 pb-4 text-[11px] font-semibold text-rose-600';
-            feedback.innerText = data.error || data.warning;
+            feedback.textContent = data.error || data.warning;
+            feedback.hidden = false;
             return;
         }
-        document.getElementById('reportHazard').checked = false;
-        closeModal('reportModal');
+        $('reportHazard').checked = false;
+        closeModals();
+        showToast(payload.hazard ? 'Локацію позначено як небезпечну' : 'Звіт прийнято, дані оновлено');
     } catch (err) {
-        feedback.className = 'px-6 pb-4 text-[11px] font-semibold text-rose-600';
-        feedback.innerText = 'Не вдалося зв\'язатися з сервером';
+        feedback.textContent = 'Не вдалося зв\'язатися з сервером';
+        feedback.hidden = false;
     }
+}
+
+function setSheetState(mode) {
+    const sidebar = $('sidebar');
+    sidebar.classList.toggle('expanded', mode === 'expanded');
+    sidebar.classList.toggle('collapsed', mode === 'collapsed');
+}
+
+$('alertSwitch').addEventListener('click', (e) => {
+    const btn = e.target.closest('.alert-option');
+    if (btn && btn.dataset.level !== state.alertLevel) changeAlertLevel(btn.dataset.level);
 });
 
-document.getElementById('refreshBtn').addEventListener('click', loadData);
+$('typeFilters').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    state.typeFilter = chip.dataset.type;
+    renderTypeFilters();
+    renderMap();
+    renderList();
+});
+
+$('searchInput').addEventListener('input', (e) => {
+    state.search = e.target.value.trim().toLowerCase();
+    renderMap();
+    renderList();
+});
+
+$('onlyOpen').addEventListener('change', (e) => {
+    state.onlyOpen = e.target.checked;
+    renderMap();
+    renderList();
+});
+
+$('locationsList').addEventListener('click', (e) => {
+    const card = e.target.closest('.location-card');
+    if (!card) return;
+    const id = Number(card.dataset.id);
+    const item = state.establishments.find(x => x.id === id);
+    const marker = state.markers.get(id);
+    if (!item || !marker) return;
+    if (window.matchMedia('(max-width: 720px)').matches) setSheetState('collapsed');
+    map.flyTo([item.lat, item.lng], 17, { duration: 1 });
+    map.once('moveend', () => marker.openPopup());
+});
+
+$('travelModeToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('.segment');
+    if (btn) setTravelMode(btn.dataset.mode);
+});
+
+$('btnToggleNav').addEventListener('click', () => setNavMode(!state.isNavMode));
+$('btnLocateMe').addEventListener('click', routeFromMyLocation);
+$('btnBannerShelter').addEventListener('click', routeFromMyLocation);
+$('btnCloseRoute').addEventListener('click', clearNavigation);
+$('refreshBtn').addEventListener('click', () => { syncAlertLevel(); loadData(); });
+
+$('btnOpenReport').addEventListener('click', () => {
+    $('reportFeedback').hidden = true;
+    openModal('reportModal');
+});
+$('btnSubmitReport').addEventListener('click', submitReport);
+
+document.querySelectorAll('.modal-close').forEach(btn => btn.addEventListener('click', closeModals));
+document.querySelectorAll('.modal').forEach(modal => modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModals();
+}));
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeModals();
+});
+
+$('sheetHandle').addEventListener('click', () => {
+    const sidebar = $('sidebar');
+    setSheetState(sidebar.classList.contains('expanded') ? 'default'
+        : sidebar.classList.contains('collapsed') ? 'default' : 'expanded');
+});
+
+map.on('click', (e) => {
+    if (!state.isNavMode) return;
+    buildRoute({ lat: e.latlng.lat, lng: e.latlng.lng });
+});
+
 syncAlertLevel();
 loadData();
