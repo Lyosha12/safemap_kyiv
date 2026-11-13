@@ -28,7 +28,7 @@ out tags center;
 """
 
 COLUMNS = ["id", "type", "name", "lat", "lng", "shelter_capacity", "underground", "generator",
-           "address", "source", "food_reserves", "max_parcel_kg", "open_24h", "wifi"]
+           "address", "source", "food_reserves", "max_parcel_kg", "open_24h", "wifi", "opening_hours"]
 
 DEFAULT_NAMES = {
     "supermarket": "Супермаркет",
@@ -107,6 +107,7 @@ def to_rows(elements):
             "max_parcel_kg": "",
             "open_24h": 1 if is_24h else "",
             "wifi": "",
+            "opening_hours": tags.get("opening_hours", "").strip(),
         })
     return rows
 

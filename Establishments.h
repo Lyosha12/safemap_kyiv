@@ -30,6 +30,7 @@ protected:
     bool is_temporarily_closed;
     std::string address;
     std::string data_source;
+    std::string opening_hours;
 
 public:
     Establishment(int id, Coordinates loc, std::string n, Shelter s, bool gen);
@@ -39,6 +40,7 @@ public:
     void apply_crowdsource_data(bool gen_state, int shelter_influx);
     bool can_shelter_more() const;
     void set_origin(std::string addr, std::string source);
+    void set_opening_hours(std::string schedule) { opening_hours = std::move(schedule); }
     virtual std::string get_name() const { return name; }
     virtual std::string get_type_name() const { return "Заклад"; }
     virtual std::string get_type_key() const = 0;
@@ -47,6 +49,7 @@ public:
     Shelter get_shelter() const { return base_shelter; }
     const std::string& get_address() const { return address; }
     const std::string& get_data_source() const { return data_source; }
+    const std::string& get_opening_hours() const { return opening_hours; }
 };
 
 class Supermarket : public Establishment {

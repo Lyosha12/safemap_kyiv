@@ -112,5 +112,7 @@ shared_ptr<Establishment> EstablishmentFactory::create(const EstablishmentRecord
     }
     auto establishment = it->second(record);
     establishment->set_origin(record.address, record.source);
+    auto schedule = record.extras.find("opening_hours");
+    if (schedule != record.extras.end()) establishment->set_opening_hours(schedule->second);
     return establishment;
 }

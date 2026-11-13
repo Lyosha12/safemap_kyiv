@@ -38,6 +38,7 @@ public:
     }
 
     std::shared_ptr<Establishment> find_nearest_shelter(const Coordinates& from_loc) const;
+    std::shared_ptr<Establishment> find_nearest_shelter(const Coordinates& from_loc, AlertLevel level) const;
     std::shared_ptr<Establishment> find_by_id(int id) const;
     void process_user_report(std::shared_ptr<Report> report, std::shared_ptr<Establishment> target);
     double evaluate_route_safety(std::shared_ptr<Establishment> destination) const;

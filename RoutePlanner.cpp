@@ -29,11 +29,15 @@ void RoutePlanner::add_establishment(shared_ptr<Establishment> est) {
 }
 
 shared_ptr<Establishment> RoutePlanner::find_nearest_shelter(const Coordinates& from_loc) const {
+    return find_nearest_shelter(from_loc, current_alert_level);
+}
+
+shared_ptr<Establishment> RoutePlanner::find_nearest_shelter(const Coordinates& from_loc, AlertLevel level) const {
     shared_ptr<Establishment> nearest = nullptr;
     double min_distance = -1.0;
 
     for (const auto& node : map_nodes) {
-        if (node->is_accessible(current_alert_level) && node->can_shelter_more()) {
+        if (node->is_accessible(level) && node->can_shelter_more()) {
             double dist = from_loc.distance_to(node->get_coordinates());
             if (min_distance < 0 || dist < min_distance) {
                 min_distance = dist;

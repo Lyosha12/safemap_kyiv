@@ -6,5 +6,11 @@
         "data/osm_places.csv",
         "data/shelters.csv"
     ],
-    "overrides_file": "data/overrides.csv"
+    "overrides_file": "data/overrides.csv",
+    "alerts": {
+        "enabled": true,
+        "region": "Київська область",
+        "neighbor": "м. Київ",
+        "poll_seconds": 60
+    }
 }

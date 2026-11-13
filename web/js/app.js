@@ -6,11 +6,22 @@ const ROUTERS = {
 };
 const ROUTE_COLOR = '#4C9BFF';
 
-const ALERT_DESCRIPTIONS = {
-    none: 'Відбій. Усі заклади працюють у звичайному режимі.',
-    yellow: 'Готовність. Працюють заклади з резервним живленням, персонал чергує.',
-    red: 'Повітряна тривога. Відчинені лише укриття та цілодобові заклади з генератором.'
+const LEVEL_NAMES = {
+    none: 'Відбій',
+    yellow: 'Жовтий рівень',
+    red: 'Червоний рівень'
 };
+
+const ALERT_DESCRIPTIONS = {
+    none: 'Відбій. Заклади працюють у звичайному режимі.',
+    yellow: 'Жовтий рівень. Працюють заклади з резервним живленням, персонал чергує.',
+    red: 'Червоний рівень. Відчинені лише укриття та цілодобові аптеки з генератором.'
+};
+
+const ALERT_POLL_MS = 30000;
+const SCHEDULE_REFRESH_MS = 60000;
+const NIGHT_START_HOUR = 1;
+const NIGHT_END_HOUR = 6;
 
 const TYPE_ICONS = {
     shelter: '<path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z"/>',
@@ -37,6 +48,10 @@ const state = {
     establishments: [],
     markers: new Map(),
     alertLevel: 'none',
+    mode: 'live',
+    simLevel: 'red',
+    live: null,
+    hiddenBySchedule: 0,
     typeFilter: 'all',
     tierFilter: 'all',
     search: '',
@@ -74,11 +89,66 @@ function iconSvg(typeKey) {
 }
 
 const TIERS = {
-    red: { label: 'Працює під час тривоги', short: 'Під час тривоги' },
-    yellow: { label: 'Працює при жовтому рівні', short: 'При жовтому рівні' },
-    none: { label: 'Не працює під час тривоги', short: 'Не працює під час тривоги' },
+    red: { label: 'Працює при червоному рівні', short: 'Червоний рівень' },
+    yellow: { label: 'Працює при жовтому рівні', short: 'Жовтий рівень' },
+    none: { label: 'Не працює під час тривоги', short: 'Лише у відбій' },
     closed: { label: 'Зачинено через звіт про небезпеку', short: 'Зачинено' }
 };
+
+const scheduleCache = new Map();
+
+function parsedSchedule(item) {
+    if (!item.opening_hours || typeof opening_hours === 'undefined') return null;
+    const key = item.opening_hours;
+    if (!scheduleCache.has(key)) {
+        try {
+            scheduleCache.set(key, new opening_hours(key, {
+                lat: item.lat,
+                lon: item.lng,
+                address: { country_code: 'ua', state: 'Київська область' }
+            }));
+        } catch (err) {
+            console.warn(`Не вдалося розібрати графік "${key}":`, err);
+            scheduleCache.set(key, null);
+        }
+    }
+    return scheduleCache.get(key);
+}
+
+function formatClock(date) {
+    return date.toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+}
+
+function scheduleStatus(item, now) {
+    if (item.type_key === 'shelter') {
+        return { open: true, kind: 'always', text: 'Укриття відчинене цілодобово' };
+    }
+    const schedule = parsedSchedule(item);
+    if (schedule) {
+        const open = schedule.getState(now);
+        const next = schedule.getNextChange(now);
+        const nextText = next ? `${open ? 'зачиниться' : 'відчиниться'} о ${formatClock(next)}` : '';
+        return { open, kind: 'hours', text: `${open ? 'Відчинено' : 'Зачинено'} за графіком${nextText ? ', ' + nextText : ''}` };
+    }
+    const hour = now.getHours();
+    const open = hour < NIGHT_START_HOUR || hour >= NIGHT_END_HOUR;
+    return {
+        open,
+        kind: 'night',
+        text: `Графік невідомий: вважаємо зачиненим з 0${NIGHT_START_HOUR}:00 до 0${NIGHT_END_HOUR}:00`
+    };
+}
+
+function applySchedules() {
+    const now = new Date();
+    state.hiddenBySchedule = 0;
+    state.establishments.forEach(item => {
+        item.schedule = scheduleStatus(item, now);
+        item.accessible = item.alertAccessible && (state.mode === 'sim' || item.schedule.open);
+        item.hiddenBySchedule = state.mode === 'live' && !item.schedule.open;
+        if (item.hiddenBySchedule) state.hiddenBySchedule++;
+    });
+}
 const TIER_ORDER = ['red', 'yellow', 'none', 'closed'];
 
 function tierOf(item) {
@@ -134,6 +204,7 @@ function showToast(message, kind = 'info') {
 }
 
 function matchesFilters(item) {
+    if (item.hiddenBySchedule) return false;
     if (state.typeFilter !== 'all' && item.type_key !== state.typeFilter) return false;
     if (state.tierFilter !== 'all' && tierOf(item) !== state.tierFilter) return false;
     if (state.onlyOpen && !item.accessible) return false;
@@ -152,12 +223,17 @@ function sortForList(a, b) {
     return a.name.localeCompare(b.name, 'uk');
 }
 
+function shownEstablishments() {
+    return state.establishments.filter(item => !item.hiddenBySchedule);
+}
+
 function renderTierFilters() {
+    const shown = shownEstablishments();
     const counts = new Map();
-    state.establishments.forEach(item => counts.set(tierOf(item), (counts.get(tierOf(item)) || 0) + 1));
+    shown.forEach(item => counts.set(tierOf(item), (counts.get(tierOf(item)) || 0) + 1));
     if (state.tierFilter !== 'all' && !counts.has(state.tierFilter)) state.tierFilter = 'all';
 
-    const chips = [['all', 'Будь-коли', state.establishments.length],
+    const chips = [['all', 'Будь-коли', shown.length],
         ...TIER_ORDER.filter(t => counts.has(t)).map(t => [t, TIERS[t].short, counts.get(t)])];
 
     $('tierFilters').innerHTML = chips.map(([key, label, count]) => `
@@ -167,11 +243,12 @@ function renderTierFilters() {
 }
 
 function renderTypeFilters() {
+    const shown = shownEstablishments();
     const counts = new Map();
-    state.establishments.forEach(item => counts.set(item.type_key, (counts.get(item.type_key) || 0) + 1));
+    shown.forEach(item => counts.set(item.type_key, (counts.get(item.type_key) || 0) + 1));
     if (state.typeFilter !== 'all' && !counts.has(state.typeFilter)) state.typeFilter = 'all';
 
-    const chips = [['all', 'Усі', state.establishments.length], ...[...counts.entries()]
+    const chips = [['all', 'Усі', shown.length], ...[...counts.entries()]
         .sort((a, b) => b[1] - a[1])
         .map(([key, count]) => [key, TYPE_LABELS_PLURAL[key] || key, count])];
 
@@ -208,12 +285,16 @@ function renderList() {
     const visible = state.establishments.filter(matchesFilters).sort(sortForList);
     $('countBadge').textContent = visible.length;
 
+    const hiddenNote = state.hiddenBySchedule
+        ? `<div class="hidden-note">Ще ${state.hiddenBySchedule} закладів зараз зачинені за графіком і приховані. Перемкніться на «Симуляцію», щоб побачити всі.</div>`
+        : '';
+
     if (!visible.length) {
-        $('locationsList').innerHTML = '<div class="empty">Нічого не знайдено за цими фільтрами</div>';
+        $('locationsList').innerHTML = '<div class="empty">Нічого не знайдено за цими фільтрами</div>' + hiddenNote;
         return;
     }
 
-    $('locationsList').innerHTML = visible.map(item => `
+    $('locationsList').innerHTML = hiddenNote + visible.map(item => `
         <button class="location-card ${item.accessible ? '' : 'closed'}" data-id="${item.id}">
             <span class="type-icon ${item.type_key === 'shelter' ? 'shelter' : ''}">${iconSvg(item.type_key)}</span>
             <span class="location-main">
@@ -227,6 +308,16 @@ function renderList() {
         </button>`).join('');
 }
 
+function renderModeDescription() {
+    const level = state.alertLevel;
+    const desc = $('alertDesc');
+    const modeText = state.mode === 'sim'
+        ? 'Симуляція: рівень обрано вручну, графіки роботи не враховуються.'
+        : 'Зараз: рівень за реальною тривогою, враховано графіки роботи.';
+    desc.innerHTML = `<strong>${ALERT_DESCRIPTIONS[level]}</strong><span>${modeText}</span>`;
+    desc.dataset.level = level;
+}
+
 function renderReportOptions() {
     const select = $('reportEstSelect');
     const selected = select.value;
@@ -238,6 +329,8 @@ function renderReportOptions() {
 }
 
 function renderAll() {
+    applySchedules();
+    renderModeDescription();
     renderTierFilters();
     renderTypeFilters();
     renderMap();
@@ -248,15 +341,24 @@ function renderAll() {
 function fitToData() {
     if (state.hasFittedBounds || !state.establishments.length) return;
     const bounds = L.latLngBounds(state.establishments.map(item => [item.lat, item.lng]));
-    map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    const isPhone = window.matchMedia('(max-width: 720px)').matches;
+    map.fitBounds(bounds, {
+        paddingTopLeft: [40, 40],
+        paddingBottomRight: [40, isPhone ? $('sidebar').offsetHeight + 20 : 40],
+        maxZoom: 15
+    });
     state.hasFittedBounds = true;
+}
+
+function levelQuery(prefix) {
+    return state.mode === 'sim' ? `${prefix}level=${state.simLevel}` : '';
 }
 
 async function loadData() {
     try {
-        const res = await fetch('/api/establishments');
+        const res = await fetch(`/api/establishments${levelQuery('?')}`);
         if (!res.ok) throw new Error();
-        state.establishments = await res.json();
+        state.establishments = (await res.json()).map(item => ({ ...item, alertAccessible: item.accessible }));
         renderAll();
         fitToData();
     } catch (err) {
@@ -265,44 +367,94 @@ async function loadData() {
     }
 }
 
-function applyAlertLevel(level) {
-    state.alertLevel = level;
-    document.querySelectorAll('.alert-option').forEach(btn => {
-        const active = btn.dataset.level === level;
+function setActive(selector, attr, value) {
+    document.querySelectorAll(selector).forEach(btn => {
+        const active = btn.dataset[attr] === value;
         btn.classList.toggle('active', active);
         btn.setAttribute('aria-checked', active);
     });
-    $('alertDesc').textContent = ALERT_DESCRIPTIONS[level];
-    $('alertDesc').dataset.level = level;
+}
+
+function applyAlertLevel(level) {
+    state.alertLevel = level;
+    setActive('.alert-option', 'level', state.simLevel);
     $('alertBanner').hidden = level !== 'red';
+    $('alertBannerText').textContent = state.mode === 'sim'
+        ? 'Симуляція червоного рівня тривоги.'
+        : `Повітряна тривога: ${state.live?.region || 'ваш регіон'}. Прямуйте до найближчого укриття.`;
+    renderModeDescription();
     setTimeout(() => map.invalidateSize(), 0);
 }
 
-async function syncAlertLevel() {
+function renderLiveStatus() {
+    const live = state.live;
+    let title = 'Перевіряю тривогу…';
+    let meta = '';
+    let level = 'unknown';
+
+    if (live && !live.live) {
+        title = 'Реальна тривога вимкнена';
+        meta = 'увімкніть alerts у config.json';
+    } else if (live && live.ok === false) {
+        title = 'Немає даних про тривогу';
+        meta = live.error || '';
+    } else if (live && live.ok) {
+        level = live.level;
+        const since = (changed) => changed ? ` з ${changed.slice(11, 16)}` : '';
+        if (live.region_alert) title = `Тривога: ${live.region}${since(live.region_changed)}`;
+        else if (live.neighbor_alert) title = `Тривога: ${live.neighbor}${since(live.neighbor_changed)}`;
+        else title = 'Тривоги немає';
+        meta = live.stale
+            ? `${LEVEL_NAMES[live.level]} · дані з ${live.checked_at.slice(11, 16)}, сервіс тимчасово недоступний`
+            : `${LEVEL_NAMES[live.level]} · перевірено ${live.checked_at.slice(11, 16)}`;
+    }
+    $('liveStatus').dataset.level = level;
+    $('liveTitle').textContent = title;
+    $('liveMeta').textContent = meta;
+}
+
+async function pollLiveAlert() {
     try {
         const res = await fetch('/api/alert');
-        const { level } = await res.json();
-        applyAlertLevel(level);
+        state.live = await res.json();
     } catch (err) {
-        applyAlertLevel('none');
+        state.live = { live: true, ok: false, error: 'сервер SafeMap недоступний' };
+    }
+    renderLiveStatus();
+    if (state.mode === 'live' && state.live.ok) {
+        if (state.live.level !== state.alertLevel) {
+            applyAlertLevel(state.live.level);
+            await loadData();
+        }
     }
 }
 
-async function changeAlertLevel(level) {
-    const previous = state.alertLevel;
+function savePreference(key, value) {
+    try { localStorage.setItem(key, value); } catch (err) { }
+}
+
+function loadPreference(key, fallback) {
+    try { return localStorage.getItem(key) || fallback; } catch (err) { return fallback; }
+}
+
+async function setMode(mode) {
+    state.mode = mode;
+    savePreference('safemap-mode', mode);
+    setActive('.mode-option', 'mode', mode);
+    $('alertSwitch').hidden = mode !== 'sim';
+    $('liveStatus').hidden = mode !== 'live';
+    const level = mode === 'sim' ? state.simLevel : (state.live?.ok ? state.live.level : 'none');
     applyAlertLevel(level);
-    try {
-        const res = await fetch('/api/alert', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ level })
-        });
-        if (!res.ok) throw new Error();
-        await loadData();
-    } catch (err) {
-        applyAlertLevel(previous);
-        showToast('Не вдалося змінити рівень тривоги', 'error');
-    }
+    clearNavigation();
+    await loadData();
+}
+
+async function setSimLevel(level) {
+    state.simLevel = level;
+    savePreference('safemap-sim-level', level);
+    applyAlertLevel(level);
+    clearNavigation();
+    await loadData();
 }
 
 function formatDistance(km) {
@@ -375,7 +527,7 @@ async function buildRoute(origin) {
 
     let shelter;
     try {
-        const res = await fetch(`/api/nearest-shelter?lat=${origin.lat}&lng=${origin.lng}`);
+        const res = await fetch(`/api/nearest-shelter?lat=${origin.lat}&lng=${origin.lng}${levelQuery('&')}`);
         shelter = await res.json();
         if (!res.ok) throw new Error(shelter.error);
     } catch (err) {
@@ -473,11 +625,7 @@ window.showDetails = function (id) {
     $('detailsType').textContent = item.type;
     $('detailsName').textContent = item.name;
 
-    const levels = [
-        ['none', 'Відбій'],
-        ['yellow', 'Жовтий рівень'],
-        ['red', 'Повітряна тривога']
-    ];
+    const levels = ['none', 'yellow', 'red'].map(level => [level, LEVEL_NAMES[level]]);
     const schedule = levels.map(([level, label]) => {
         const works = item.availability[level];
         return `<div class="level-cell level-${level} ${works ? 'works' : 'off'} ${state.alertLevel === level ? 'current' : ''}">
@@ -487,8 +635,11 @@ window.showDetails = function (id) {
     }).join('');
 
     const rows = [
-        detailRow('Зараз', item.accessible ? 'Відчинено' : 'Зачинено', item.accessible ? 'good' : 'bad'),
+        detailRow(state.mode === 'sim' ? `При рівні «${LEVEL_NAMES[state.alertLevel]}»` : 'Зараз',
+            item.accessible ? 'Відчинено' : 'Зачинено', item.accessible ? 'good' : 'bad'),
         `<div class="level-grid">${schedule}</div>`,
+        item.opening_hours ? detailRow('Графік роботи', escapeHtml(item.opening_hours)) : '',
+        item.schedule ? `<p class="schedule-note">${escapeHtml(item.schedule.text)}</p>` : '',
         item.address ? detailRow('Адреса', escapeHtml(item.address)) : '',
         detailRow('Резервне живлення', item.generator ? 'Є генератор' : 'Немає', item.generator ? 'good' : ''),
     ];
@@ -551,7 +702,12 @@ function setSheetState(mode) {
 
 $('alertSwitch').addEventListener('click', (e) => {
     const btn = e.target.closest('.alert-option');
-    if (btn && btn.dataset.level !== state.alertLevel) changeAlertLevel(btn.dataset.level);
+    if (btn && btn.dataset.level !== state.simLevel) setSimLevel(btn.dataset.level);
+});
+
+$('modeSwitch').addEventListener('click', (e) => {
+    const btn = e.target.closest('.mode-option');
+    if (btn && btn.dataset.mode !== state.mode) setMode(btn.dataset.mode);
 });
 
 $('tierFilters').addEventListener('click', (e) => {
@@ -605,7 +761,7 @@ $('btnToggleNav').addEventListener('click', () => setNavMode(!state.isNavMode));
 $('btnLocateMe').addEventListener('click', routeFromMyLocation);
 $('btnBannerShelter').addEventListener('click', routeFromMyLocation);
 $('btnCloseRoute').addEventListener('click', clearNavigation);
-$('refreshBtn').addEventListener('click', () => { syncAlertLevel(); loadData(); });
+$('refreshBtn').addEventListener('click', () => { pollLiveAlert(); loadData(); });
 
 $('btnOpenReport').addEventListener('click', () => {
     $('reportFeedback').hidden = true;
@@ -632,5 +788,15 @@ map.on('click', (e) => {
     buildRoute({ lat: e.latlng.lat, lng: e.latlng.lng });
 });
 
-syncAlertLevel();
-loadData();
+async function init() {
+    state.simLevel = loadPreference('safemap-sim-level', 'red');
+    await pollLiveAlert();
+    await setMode(loadPreference('safemap-mode', 'live'));
+    setInterval(pollLiveAlert, ALERT_POLL_MS);
+    setInterval(() => {
+        if (state.mode !== 'live' || !state.establishments.length) return;
+        renderAll();
+    }, SCHEDULE_REFRESH_MS);
+}
+
+init();

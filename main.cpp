@@ -20,6 +20,7 @@
 #include "Establishments.h"
 #include "Infrastructure.h"
 #include "Crowdsourcing.h"
+#include "AlertMonitor.h"
 #include <windows.h>
 
 using json = nlohmann::json;
@@ -31,7 +32,9 @@ const std::vector<std::string> kSearchPrefixes = {"", "../"};
 json load_config() {
     json defaults = {{"host", "0.0.0.0"}, {"port", 8080}, {"web_root", "web"},
                      {"data_files", {"data/osm_places.csv", "data/shelters.csv"}},
-                     {"overrides_file", "data/overrides.csv"}};
+                     {"overrides_file", "data/overrides.csv"},
+                     {"alerts", {{"enabled", true}, {"region", "Київська область"},
+                                 {"neighbor", "м. Київ"}, {"poll_seconds", 60}}}};
     for (const auto& prefix : kSearchPrefixes) {
         std::ifstream file(prefix + "config.json");
         if (!file.is_open()) continue;
@@ -89,6 +92,16 @@ std::optional<Coordinates> parse_coordinates(const httplib::Request& req) {
     }
 }
 
+enum class LevelParam { Absent, Valid, Invalid };
+
+LevelParam read_level_param(const httplib::Request& req, AlertLevel& level) {
+    if (!req.has_param("level")) return LevelParam::Absent;
+    auto parsed = parse_alert_level(req.get_param_value("level"));
+    if (!parsed) return LevelParam::Invalid;
+    level = *parsed;
+    return LevelParam::Valid;
+}
+
 void send_error(httplib::Response& res, int status, const std::string& message) {
     res.status = status;
     res.set_content(json{{"error", message}}.dump(), "application/json");
@@ -106,6 +119,7 @@ json establishment_to_json(const Establishment& est, AlertLevel alert) {
         {"lng", coords.get_longitude()},
         {"address", est.get_address()},
         {"source", est.get_data_source()},
+        {"opening_hours", est.get_opening_hours()},
         {"generator", est.has_backup_power()},
         {"shelter_capacity", shelter.get_capacity()},
         {"shelter_free", std::max(0, shelter.get_free_places())},
@@ -210,37 +224,62 @@ int main() {
     std::cout << "[Фронтенд] Роздаю статичні файли з " << web_root << std::endl;
 
     std::mutex planner_mutex;
+    std::unique_ptr<AlertMonitor> alert_monitor;
+    json alert_config = config["alerts"];
+    std::string alert_region = alert_config.value("region", std::string("Київська область"));
+    std::string alert_neighbor = alert_config.value("neighbor", std::string("м. Київ"));
+    if (alert_config.value("enabled", true)) {
+        int poll_seconds = std::max(60, alert_config.value("poll_seconds", 60));
+        alert_monitor = std::make_unique<AlertMonitor>(
+            std::make_unique<UbillingAlertSource>(alert_region, alert_neighbor), std::chrono::seconds(poll_seconds));
+        alert_monitor->start([&planner, &planner_mutex](const AlertSnapshot& snapshot) {
+            if (!snapshot.ok) {
+                std::cerr << "[Тривога] " << snapshot.error << std::endl;
+                return;
+            }
+            AlertLevel level = level_for(snapshot);
+            std::lock_guard<std::mutex> lock(planner_mutex);
+            if (level != planner.get_alert_level()) {
+                planner.set_alert_level(level);
+                std::cout << "[Тривога] Реальний рівень: " << alert_level_name(level) << std::endl;
+            }
+        });
+        std::cout << "[Тривога] Стежу за регіоном '" << alert_region << "' кожні " << poll_seconds << " с" << std::endl;
+    }
 
-    svr.Get("/api/establishments", [&](const httplib::Request&, httplib::Response& res) {
+    svr.Get("/api/establishments", [&](const httplib::Request& req, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(planner_mutex);
+        AlertLevel level = planner.get_alert_level();
+        if (read_level_param(req, level) == LevelParam::Invalid) {
+            send_error(res, 400, "Невідомий рівень (очікується none, yellow або red)");
+            return;
+        }
         json response = json::array();
-        AlertLevel alert = planner.get_alert_level();
         for (const auto& est : planner.get_establishments()) {
-            response.push_back(establishment_to_json(*est, alert));
+            response.push_back(establishment_to_json(*est, level));
         }
         res.set_content(response.dump(), "application/json");
     });
 
     svr.Get("/api/alert", [&](const httplib::Request&, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(planner_mutex);
-        res.set_content(json{{"level", alert_level_name(planner.get_alert_level())}}.dump(), "application/json");
-    });
-
-    svr.Post("/api/alert", [&](const httplib::Request& req, httplib::Response& res) {
-        json body = json::parse(req.body, nullptr, false);
-        if (body.is_discarded() || !body.is_object()) {
-            send_error(res, 400, "Некоректний JSON");
-            return;
+        json reply = {{"level", alert_level_name(planner.get_alert_level())}, {"live", false}};
+        if (alert_monitor) {
+            AlertSnapshot snapshot = alert_monitor->snapshot();
+            reply["live"] = true;
+            reply["ok"] = snapshot.ok;
+            reply["stale"] = snapshot.stale;
+            reply["source"] = alert_monitor->source_name();
+            reply["region"] = alert_region;
+            reply["region_alert"] = snapshot.region_alert;
+            reply["region_changed"] = snapshot.region_changed;
+            reply["neighbor"] = alert_neighbor;
+            reply["neighbor_alert"] = snapshot.neighbor_alert;
+            reply["neighbor_changed"] = snapshot.neighbor_changed;
+            reply["checked_at"] = snapshot.fetched_at;
+            if (!snapshot.error.empty()) reply["error"] = snapshot.error;
         }
-        auto level = parse_alert_level(body.value("level", ""));
-        if (!level) {
-            send_error(res, 400, "Невідомий рівень тривоги (очікується none, yellow або red)");
-            return;
-        }
-        std::lock_guard<std::mutex> lock(planner_mutex);
-        planner.set_alert_level(*level);
-        std::cout << "[Тривога] Рівень змінено на " << alert_level_name(*level) << std::endl;
-        res.set_content(json{{"status", "success"}, {"level", alert_level_name(*level)}}.dump(), "application/json");
+        res.set_content(reply.dump(), "application/json");
     });
 
     svr.Post("/api/reports", [&](const httplib::Request& req, httplib::Response& res) {
@@ -295,7 +334,12 @@ int main() {
         }
 
         std::lock_guard<std::mutex> lock(planner_mutex);
-        auto shelter = planner.find_nearest_shelter(*user_coords);
+        AlertLevel level = planner.get_alert_level();
+        if (read_level_param(req, level) == LevelParam::Invalid) {
+            send_error(res, 400, "Невідомий рівень (очікується none, yellow або red)");
+            return;
+        }
+        auto shelter = planner.find_nearest_shelter(*user_coords, level);
         if (!shelter) {
             res.set_content(json{{"found", false},
                                  {"message", "Доступних укриттів із вільними місцями не знайдено"}}.dump(),

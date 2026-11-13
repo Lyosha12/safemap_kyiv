@@ -26,16 +26,32 @@
         </div>
     </div>
 
-    <div class="alert-switch" id="alertSwitch" role="radiogroup" aria-label="Рівень тривоги">
-        <button class="alert-option" data-level="none" role="radio">
-            <span class="dot"></span><span class="label">Відбій</span>
-        </button>
-        <button class="alert-option" data-level="yellow" role="radio">
-            <span class="dot"></span><span class="label">Готовність</span>
-        </button>
-        <button class="alert-option" data-level="red" role="radio">
-            <span class="dot"></span><span class="label">Тривога</span>
-        </button>
+    <div class="header-controls">
+        <div class="mode-switch" id="modeSwitch" role="radiogroup" aria-label="Режим">
+            <button class="mode-option" data-mode="live" role="radio">Зараз</button>
+            <button class="mode-option" data-mode="sim" role="radio">Симуляція</button>
+        </div>
+
+        <div class="alert-switch" id="alertSwitch" role="radiogroup" aria-label="Рівень тривоги для симуляції" hidden>
+            <button class="alert-option" data-level="none" role="radio">
+                <span class="dot"></span><span class="label">Відбій</span>
+            </button>
+            <button class="alert-option" data-level="yellow" role="radio">
+                <span class="dot"></span><span class="label">Жовтий рівень</span>
+            </button>
+            <button class="alert-option" data-level="red" role="radio">
+                <span class="dot"></span><span class="label">Червоний рівень</span>
+            </button>
+        </div>
+
+        <div class="live-status" id="liveStatus" data-level="none"
+             title="Червоний рівень — тривога в Київській області. Жовтий — тривога лише в м. Київ.">
+            <span class="dot"></span>
+            <span class="live-text">
+                <strong id="liveTitle">Перевіряю тривогу…</strong>
+                <small id="liveMeta"></small>
+            </span>
+        </div>
     </div>
 
     <button id="refreshBtn" class="icon-btn" title="Оновити дані" aria-label="Оновити дані">
@@ -45,7 +61,7 @@
 
 <div id="alertBanner" class="alert-banner" hidden>
     <span class="alert-banner-icon">⚠</span>
-    <span class="alert-banner-text">Повітряна тривога. Прямуйте до найближчого укриття.</span>
+    <span class="alert-banner-text" id="alertBannerText">Повітряна тривога. Прямуйте до найближчого укриття.</span>
     <button id="btnBannerShelter" class="btn btn-yellow btn-sm">Знайти укриття</button>
 </div>
 
@@ -119,7 +135,7 @@
 
         <div class="legend">
             <span><i class="legend-dot shelter"></i>Укриття</span>
-            <span><i class="legend-dot tier-red"></i>Працює під час тривоги</span>
+            <span><i class="legend-dot tier-red"></i>Працює при червоному рівні</span>
             <span><i class="legend-dot tier-yellow"></i>Працює при жовтому рівні</span>
             <span><i class="legend-dot tier-none"></i>Не працює під час тривоги</span>
             <span><i class="legend-dot closed"></i>Зачинено зараз</span>
@@ -206,6 +222,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/opening_hours@3.15.0/build/opening_hours.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
