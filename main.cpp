@@ -30,7 +30,7 @@ const std::vector<std::string> kSearchPrefixes = {"", "../"};
 
 json load_config() {
     json defaults = {{"host", "0.0.0.0"}, {"port", 8080}, {"web_root", "web"},
-                     {"data_file", "data/establishments.csv"}};
+                     {"data_files", {"data/osm_places.csv", "data/shelters.csv"}}};
     for (const auto& prefix : kSearchPrefixes) {
         std::ifstream file(prefix + "config.json");
         if (!file.is_open()) continue;
@@ -123,24 +123,37 @@ int main() {
     json config = load_config();
     RoutePlanner planner;
 
-    auto data_file = resolve_existing(config["data_file"].get<std::string>());
-    if (!data_file) {
-        std::cerr << "[Помилка] Не знайдено файл даних '" << config["data_file"].get<std::string>() << "'" << std::endl;
-        return 1;
-    }
-    try {
-        DataLoader loader(std::make_unique<CsvDataSource>(*data_file), EstablishmentFactory::with_default_types());
-        LoadSummary summary = loader.load_into(planner);
-        std::cout << "[Дані] Завантажено " << summary.loaded << " закладів з " << *data_file << std::endl;
-        for (const auto& issue : summary.issues) {
-            std::cerr << "[Дані] Рядок " << issue.line << " пропущено: " << issue.message << std::endl;
+    const EstablishmentFactory factory = EstablishmentFactory::with_default_types();
+    for (const auto& entry : config["data_files"]) {
+        std::string configured = entry.get<std::string>();
+        auto data_file = resolve_existing(configured);
+        if (!data_file) {
+            std::cerr << "[Помилка] Не знайдено файл даних '" << configured << "'" << std::endl;
+            return 1;
         }
-    } catch (const std::exception& e) {
-        std::cerr << "[Помилка] Не вдалося прочитати " << *data_file << ": " << e.what() << std::endl;
-        return 1;
+        try {
+            DataLoader loader(std::make_unique<CsvDataSource>(*data_file), factory);
+            LoadSummary summary = loader.load_into(planner);
+            std::cout << "[Дані] Завантажено " << summary.loaded << " закладів з " << *data_file << std::endl;
+            for (const auto& issue : summary.issues) {
+                std::cerr << "[Дані] " << *data_file << ", рядок " << issue.line << " пропущено: " << issue.message << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[Помилка] Не вдалося прочитати " << *data_file << ": " << e.what() << std::endl;
+            return 1;
+        }
+    }
+    if (planner.get_establishments().empty()) {
+        std::cerr << "[Попередження] Жодного закладу не завантажено" << std::endl;
     }
 
     httplib::Server svr;
+#ifdef _WIN32
+    svr.set_socket_options([](socket_t sock) {
+        int enabled = 1;
+        setsockopt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&enabled), sizeof(enabled));
+    });
+#endif
 
     svr.set_default_headers({
         {"Access-Control-Allow-Origin", "*"},
@@ -281,7 +294,7 @@ int main() {
     int port = config["port"].get<int>();
     std::cout << "Сервер SafeMap Kyiv працює на http://localhost:" << port << std::endl;
     if (!svr.listen(host, port)) {
-        std::cerr << "[Помилка] Не вдалося запустити сервер на порту " << port << std::endl;
+        std::cerr << "[Помилка] Не вдалося запустити сервер на порту " << port << " (можливо, його вже зайняв інший екземпляр SafeMap)" << std::endl;
         return 1;
     }
 

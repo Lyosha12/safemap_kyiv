@@ -46,6 +46,10 @@ EstablishmentFactory EstablishmentFactory::with_default_types() {
                                         Shelter(r.shelter_capacity, r.underground), r.generator,
                                         r.extra_flag("food_reserves", true));
     });
+    factory.register_type("grocery", [](const EstablishmentRecord& r) {
+        return make_shared<GroceryStore>(r.id, Coordinates(r.lat, r.lng), r.name,
+                                         Shelter(r.shelter_capacity, r.underground), r.generator);
+    });
     factory.register_type("post_office", [](const EstablishmentRecord& r) {
         return make_shared<PostOffice>(r.id, Coordinates(r.lat, r.lng), r.name,
                                        Shelter(r.shelter_capacity, r.underground), r.generator,

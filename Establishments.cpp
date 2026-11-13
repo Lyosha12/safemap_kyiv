@@ -51,6 +51,9 @@ void Supermarket::restock_reserves() {
     has_food_reserves = true;
 }
 
+GroceryStore::GroceryStore(int id, Coordinates loc, string n, Shelter s, bool gen)
+    : Supermarket(id, loc, n, s, gen, false) {}
+
 PostOffice::PostOffice(int id, Coordinates loc, string n, Shelter s, bool gen, double max_weight)
     : Establishment(id, loc, n, s, gen), max_parcel_weight(max_weight) {}
 

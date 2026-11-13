@@ -1,4 +1,4 @@
-const DEFAULT_VIEW = { center: [50.4470, 30.5210], zoom: 13 };
+const DEFAULT_VIEW = { center: [50.4905, 30.3338], zoom: 15 };
 
 const ROUTERS = {
     walk: { url: 'https://routing.openstreetmap.de/routed-foot/route/v1', label: 'Пішки' },
@@ -15,6 +15,7 @@ const ALERT_DESCRIPTIONS = {
 const TYPE_ICONS = {
     shelter: '<path d="M12 3l7 3v5c0 5-3 8.5-7 10-4-1.5-7-5-7-10V6z"/>',
     supermarket: '<path d="M3 4h2.5l2.2 10.5h10.6L20.5 7H6.3"/><circle cx="9" cy="19" r="1.4"/><circle cx="17" cy="19" r="1.4"/>',
+    grocery: '<path d="M5 8h14l-1.2 11.2a1 1 0 0 1-1 .8H7.2a1 1 0 0 1-1-.8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
     pharmacy: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/>',
     post_office: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 8l9 6 9-6"/>',
     cafe: '<path d="M4 9h12v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3.5v2M12 3.5v2"/>',
@@ -25,6 +26,7 @@ const TYPE_ICONS = {
 const TYPE_LABELS_PLURAL = {
     shelter: 'Укриття',
     supermarket: 'Супермаркети',
+    grocery: 'Продукти',
     pharmacy: 'Аптеки',
     post_office: 'Пошта',
     cafe: 'Кафе',
@@ -175,7 +177,9 @@ function renderList() {
             <span class="type-icon ${item.type_key === 'shelter' ? 'shelter' : ''}">${iconSvg(item.type_key)}</span>
             <span class="location-main">
                 <span class="location-name">${escapeHtml(item.name)}</span>
-                <span class="location-meta">${escapeHtml(item.type)} · ${shelterText(item)}</span>
+                <span class="location-meta">${item.type_key === 'shelter'
+                    ? `${escapeHtml(item.address || item.type)} · місць: <b>${item.shelter_free}</b> / ${item.shelter_capacity}`
+                    : `${escapeHtml(item.type)} · ${shelterText(item)}`}</span>
             </span>
             ${statusBadge(item)}
         </button>`).join('');
@@ -436,7 +440,7 @@ window.showDetails = function (id) {
         const used = item.shelter_capacity - item.shelter_free;
         const percent = Math.round(used / item.shelter_capacity * 100);
         rows.push(
-            detailRow('Укриття', item.shelter_underground ? 'Підземне' : 'Наземне'),
+            detailRow('Розташування укриття', item.shelter_underground ? 'Підвал / підземне' : 'Не вказано'),
             detailRow('Вільних місць', `${item.shelter_free} з ${item.shelter_capacity}`, 'accent'),
             `<div class="occupancy" title="Заповненість ${percent}%"><span style="width:${percent}%"></span></div>`
         );

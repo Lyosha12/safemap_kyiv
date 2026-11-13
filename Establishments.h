@@ -61,6 +61,13 @@ public:
     void restock_reserves();
 };
 
+class GroceryStore : public Supermarket {
+public:
+    GroceryStore(int id, Coordinates loc, std::string n, Shelter s, bool gen);
+    std::string get_type_name() const override { return "Продукти"; }
+    std::string get_type_key() const override { return "grocery"; }
+};
+
 class PostOffice : public Establishment {
 private:
     double max_parcel_weight;

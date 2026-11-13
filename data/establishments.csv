@@ -1,4 +1,0 @@
-id,type,name,lat,lng,shelter_capacity,underground,generator,address,source,food_reserves,max_parcel_kg,open_24h,wifi
-1,supermarket,Сільпо (ТРЦ Gulliver),50.4385,30.5234,150,1,1,"Спортивна площа, 1А, Київ",demo,1,,,
-2,post_office,Нова Пошта №1,50.4511,30.5211,0,0,0,Київ,demo,,30,,
-3,supermarket,Ашан (Ocean Plaza),50.4128,30.5245,300,1,1,"вул. Антоновича, 176, Київ",demo,1,,,

@@ -2,5 +2,8 @@
     "host": "0.0.0.0",
     "port": 8080,
     "web_root": "web",
-    "data_file": "data/establishments.csv"
+    "data_files": [
+        "data/osm_places.csv",
+        "data/shelters.csv"
+    ]
 }

@@ -135,9 +135,8 @@ LoadSummary DataLoader::load_into(RoutePlanner& planner) const {
     LoadSummary summary;
     summary.issues = move(data.issues);
 
-    set<int> seen_ids;
     for (const auto& [line, record] : data.records) {
-        if (!seen_ids.insert(record.id).second) {
+        if (planner.find_by_id(record.id)) {
             summary.issues.push_back({line, "повторний id " + to_string(record.id)});
             continue;
         }
