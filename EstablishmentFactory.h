@@ -25,6 +25,7 @@ struct EstablishmentRecord {
 };
 
 bool parse_flag(const std::string& raw, bool fallback = false);
+bool is_flag(const std::string& raw);
 
 class EstablishmentFactory {
 public:

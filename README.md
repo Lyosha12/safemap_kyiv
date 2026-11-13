@@ -65,7 +65,8 @@ cd build
     "host": "0.0.0.0",
     "port": 8080,
     "web_root": "web",
-    "data_files": ["data/osm_places.csv", "data/shelters.csv"]
+    "data_files": ["data/osm_places.csv", "data/shelters.csv"],
+    "overrides_file": "data/overrides.csv"
 }
 ```
 
@@ -77,6 +78,25 @@ cd build
 | `data/shelters.csv` | карта Google My Maps «Укриття Коцюбинської СТГ» | вручну |
 
 Місткість укриттів у джерелі не вказана, тому в `shelters.csv` стоять оцінки (позначено в колонці `source`).
+
+### Ручні уточнення: data/overrides.csv
+
+OpenStreetMap не знає, де є генератор, тому всі заклади з OSM за замовчуванням вважаються такими, що не мають генератора. Через це при жовтому рівні чи тривозі вони закриваються. Щоб це виправити, не редагуйте `osm_places.csv` (його перезаписує скрипт). Заповніть `data/overrides.csv`:
+
+```csv
+osm,id,note,generator,open_24h,wifi,shelter_capacity,underground,name,type,address
+way/502804717,,АТБ-Маркет,1,,,,,,,
+node/12199698726,,Подорожник,так,1,,,,,,
+,13,Укриття на Шевченка,,,,30,,,,
+```
+
+- Заклад знаходиться за колонкою `osm` (`node/123`, `way/123`, або повне посилання `https://www.openstreetmap.org/node/123`). Посилання OSM не змінюються після оновлення даних, на відміну від `id`. Для укриттів із `shelters.csv` використовуйте `id`.
+- Порожня клітинка нічого не змінює. `note` — лише для вас, сервер її ігнорує.
+- Можна змінити `generator`, `open_24h`, `wifi`, `food_reserves`, `max_parcel_kg`, `shelter_capacity`, `underground`, `name`, `type`, `address`, `lat`, `lng`.
+- Уточнений заклад отримує в джерелі даних позначку «уточнено вручну».
+- Якщо запис ні з чим не збігся (наприклад, заклад зник з OSM), сервер попереджає в консолі.
+
+Файл задається в `config.json` як `overrides_file`.
 
 ### Формат CSV
 
@@ -114,7 +134,7 @@ Establishments.*            ієрархія закладів і правила 
 Crowdsourcing.*             User, Report, StatusReport, HazardReport
 RoutePlanner.*              пошук укриттів, оцінка часу в дорозі
 EstablishmentFactory.*      створення закладів за типом із CSV
-DataLoader.*                IDataSource, CsvDataSource (rapidcsv), DataLoader
+DataLoader.*                IDataSource, CsvDataSource (rapidcsv), OverriddenDataSource + RecordOverrides, DataLoader
 web/                        index.html, css/style.css, js/app.js, img/logo.svg
 data/                       CSV з локаціями
 tools/osm_to_csv.py         експорт закладів з OpenStreetMap

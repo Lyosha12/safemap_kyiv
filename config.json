@@ -5,5 +5,6 @@
     "data_files": [
         "data/osm_places.csv",
         "data/shelters.csv"
-    ]
+    ],
+    "overrides_file": "data/overrides.csv"
 }

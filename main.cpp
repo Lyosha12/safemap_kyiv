@@ -30,7 +30,8 @@ const std::vector<std::string> kSearchPrefixes = {"", "../"};
 
 json load_config() {
     json defaults = {{"host", "0.0.0.0"}, {"port", 8080}, {"web_root", "web"},
-                     {"data_files", {"data/osm_places.csv", "data/shelters.csv"}}};
+                     {"data_files", {"data/osm_places.csv", "data/shelters.csv"}},
+                     {"overrides_file", "data/overrides.csv"}};
     for (const auto& prefix : kSearchPrefixes) {
         std::ifstream file(prefix + "config.json");
         if (!file.is_open()) continue;
@@ -128,6 +129,28 @@ int main() {
     json config = load_config();
     RoutePlanner planner;
 
+    auto overrides = std::make_shared<RecordOverrides>();
+    std::string overrides_setting = config.value("overrides_file", std::string());
+    if (!overrides_setting.empty()) {
+        auto overrides_file = resolve_existing(overrides_setting);
+        if (overrides_file) {
+            try {
+                std::vector<LoadIssue> issues;
+                *overrides = RecordOverrides::from_csv(*overrides_file, issues);
+                std::cout << "[Уточнення] " << overrides->size() << " записів з " << *overrides_file << std::endl;
+                for (const auto& issue : issues) {
+                    std::cerr << "[Уточнення] " << *overrides_file << ", рядок " << issue.line
+                              << " пропущено: " << issue.message << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "[Помилка] Не вдалося прочитати " << *overrides_file << ": " << e.what() << std::endl;
+                return 1;
+            }
+        } else {
+            std::cout << "[Уточнення] Файл '" << overrides_setting << "' не знайдено, працюю без уточнень" << std::endl;
+        }
+    }
+
     const EstablishmentFactory factory = EstablishmentFactory::with_default_types();
     for (const auto& entry : config["data_files"]) {
         std::string configured = entry.get<std::string>();
@@ -137,7 +160,9 @@ int main() {
             return 1;
         }
         try {
-            DataLoader loader(std::make_unique<CsvDataSource>(*data_file), factory);
+            DataLoader loader(std::make_unique<OverriddenDataSource>(
+                                  std::make_unique<CsvDataSource>(*data_file), overrides),
+                              factory);
             LoadSummary summary = loader.load_into(planner);
             std::cout << "[Дані] Завантажено " << summary.loaded << " закладів з " << *data_file << std::endl;
             for (const auto& issue : summary.issues) {
@@ -147,6 +172,11 @@ int main() {
             std::cerr << "[Помилка] Не вдалося прочитати " << *data_file << ": " << e.what() << std::endl;
             return 1;
         }
+    }
+    for (const auto& item : overrides->unused()) {
+        std::cerr << "[Уточнення] Рядок " << item.line << " ні з чим не збігся ("
+                  << (item.match_by_id ? "id " + std::to_string(item.id) : item.osm_ref)
+                  << "). Можливо, заклад зник з даних" << std::endl;
     }
     if (planner.get_establishments().empty()) {
         std::cerr << "[Попередження] Жодного закладу не завантажено" << std::endl;

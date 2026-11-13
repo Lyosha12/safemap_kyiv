@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
 #include <stdexcept>
 
 using namespace std;
@@ -16,11 +17,23 @@ string to_lower_ascii(string value) {
 
 }
 
+namespace {
+
+const set<string> kTrueValues = {"1", "true", "yes", "y", "так"};
+const set<string> kFalseValues = {"0", "false", "no", "n", "ні"};
+
+}
+
 bool parse_flag(const string& raw, bool fallback) {
     string value = to_lower_ascii(raw);
-    if (value == "1" || value == "true" || value == "yes" || value == "y" || value == "так") return true;
-    if (value == "0" || value == "false" || value == "no" || value == "n" || value == "ні") return false;
+    if (kTrueValues.count(value)) return true;
+    if (kFalseValues.count(value)) return false;
     return fallback;
+}
+
+bool is_flag(const string& raw) {
+    string value = to_lower_ascii(raw);
+    return kTrueValues.count(value) > 0 || kFalseValues.count(value) > 0;
 }
 
 bool EstablishmentRecord::extra_flag(const string& key, bool fallback) const {

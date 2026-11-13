@@ -127,6 +127,130 @@ SourceData CsvDataSource::load() const {
     return data;
 }
 
+namespace {
+
+const set<string> kOverrideFlagColumns = {"generator", "underground", "open_24h", "wifi", "food_reserves"};
+const set<string> kOverrideIgnoredColumns = {"osm", "id", "note"};
+
+string normalize_osm_ref(string ref) {
+    const string url_marker = "openstreetmap.org/";
+    size_t pos = ref.find(url_marker);
+    if (pos != string::npos) ref = ref.substr(pos + url_marker.size());
+    if (ref.rfind("OSM ", 0) == 0) ref = ref.substr(4);
+    return ref;
+}
+
+void validate_override_field(const RowReader& reader, const string& column, const string& value) {
+    if (kOverrideFlagColumns.count(column) && !is_flag(value)) {
+        throw invalid_argument("колонка '" + column + "' очікує так/ні, отримано '" + value + "'");
+    }
+    if (column == "shelter_capacity" && reader.number<int>(column) < 0) {
+        throw out_of_range("від'ємна місткість укриття");
+    }
+    if (column == "lat" || column == "lng" || column == "max_parcel_kg") {
+        reader.number<double>(column);
+    }
+}
+
+}
+
+RecordOverrides RecordOverrides::from_csv(const string& path, vector<LoadIssue>& issues) {
+    rapidcsv::Document doc(path,
+                           rapidcsv::LabelParams(0, -1),
+                           rapidcsv::SeparatorParams(',', true),
+                           rapidcsv::ConverterParams(),
+                           rapidcsv::LineReaderParams(true, '#', true));
+
+    if (doc.GetColumnIdx("osm") < 0 && doc.GetColumnIdx("id") < 0) {
+        throw runtime_error("у файлі " + path + " потрібна колонка 'osm' або 'id'");
+    }
+
+    vector<string> field_columns;
+    for (const auto& column : doc.GetColumnNames()) {
+        if (!column.empty() && kOverrideIgnoredColumns.count(column) == 0) field_columns.push_back(column);
+    }
+
+    RecordOverrides result;
+    for (size_t row = 0; row < doc.GetRowCount(); ++row) {
+        size_t line = row + kHeaderLines + 1;
+        try {
+            RowReader reader(doc, row);
+            RecordOverride item;
+            item.line = line;
+            item.osm_ref = normalize_osm_ref(reader.text("osm"));
+            if (item.osm_ref.empty()) {
+                if (reader.text("id").empty()) throw invalid_argument("потрібно заповнити 'osm' або 'id'");
+                item.id = reader.number<int>("id");
+                item.match_by_id = true;
+            }
+            for (const auto& column : field_columns) {
+                string value = reader.text(column);
+                if (value.empty()) continue;
+                validate_override_field(reader, column, value);
+                item.fields[column] = value;
+            }
+            if (item.fields.empty()) continue;
+            result.items.push_back(move(item));
+        } catch (const exception& e) {
+            issues.push_back({line, e.what()});
+        }
+    }
+    result.used.assign(result.items.size(), false);
+    return result;
+}
+
+bool RecordOverrides::matches(const RecordOverride& item, const EstablishmentRecord& record) const {
+    if (item.match_by_id) return record.id == item.id;
+    return normalize_osm_ref(record.source) == item.osm_ref;
+}
+
+bool RecordOverrides::apply(EstablishmentRecord& record) {
+    bool changed = false;
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (!matches(items[i], record)) continue;
+        for (const auto& [column, value] : items[i].fields) {
+            if (column == "name") record.name = value;
+            else if (column == "type") record.type = value;
+            else if (column == "address") record.address = value;
+            else if (column == "lat") record.lat = stod(value);
+            else if (column == "lng") record.lng = stod(value);
+            else if (column == "shelter_capacity") record.shelter_capacity = stoi(value);
+            else if (column == "generator") record.generator = parse_flag(value);
+            else if (column == "underground") record.underground = parse_flag(value);
+            else record.extras[column] = value;
+        }
+        used[i] = true;
+        changed = true;
+    }
+    if (changed) {
+        record.source += record.source.empty() ? "уточнено вручну" : "; уточнено вручну";
+    }
+    return changed;
+}
+
+vector<RecordOverride> RecordOverrides::unused() const {
+    vector<RecordOverride> result;
+    for (size_t i = 0; i < items.size(); ++i) {
+        if (!used[i]) result.push_back(items[i]);
+    }
+    return result;
+}
+
+OverriddenDataSource::OverriddenDataSource(unique_ptr<IDataSource> src, shared_ptr<RecordOverrides> o)
+    : inner(move(src)), overrides(move(o)) {}
+
+SourceData OverriddenDataSource::load() const {
+    SourceData data = inner->load();
+    for (auto& entry : data.records) {
+        overrides->apply(entry.second);
+    }
+    return data;
+}
+
+string OverriddenDataSource::describe() const {
+    return inner->describe() + " з уточненнями";
+}
+
 DataLoader::DataLoader(unique_ptr<IDataSource> src, EstablishmentFactory f)
     : source(move(src)), factory(move(f)) {}
 
