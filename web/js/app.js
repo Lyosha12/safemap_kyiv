@@ -75,14 +75,26 @@ async function loadData() {
     }
 }
 
+const alertDescriptions = {
+    'none': '🟢 Усі заклади функціонують у стандартному режимі.',
+    'yellow': '🟡 Жовтий рівень: перевірено резервне живлення, чергування персоналу.',
+    'red': '🔴 Червоний рівень: відкриті виключно сертифіковані укриття!'
+};
+
+async function syncAlertLevel() {
+    try {
+        const res = await fetch('/api/alert');
+        const { level } = await res.json();
+        document.getElementById('alertSelect').value = level;
+        document.getElementById('alertDesc').innerText = alertDescriptions[level];
+    } catch (err) {
+        console.error(err);
+    }
+}
+
 document.getElementById('alertSelect').addEventListener('change', async (e) => {
     const level = e.target.value;
-    const desc = {
-        'none': '🟢 Усі заклади столиці функціонують у стандартному режимі.',
-        'yellow': '🟡 Жовтий рівень: перевірено резервне живлення, чергування персоналу.',
-        'red': '🔴 Червоний рівень: відкриті виключно сертифіковані укриття!'
-    };
-    document.getElementById('alertDesc').innerText = desc[level];
+    document.getElementById('alertDesc').innerText = alertDescriptions[level];
 
     await fetch('/api/alert', {
         method: 'POST',
@@ -217,7 +229,10 @@ window.showDetails = function(id) {
     openModal('detailsModal');
 };
 
-document.getElementById('btnOpenReport').onclick = () => openModal('reportModal');
+document.getElementById('btnOpenReport').onclick = () => {
+    document.getElementById('reportFeedback').classList.add('hidden');
+    openModal('reportModal');
+};
 
 document.querySelectorAll('.modal-close').forEach(btn => {
     btn.onclick = () => {
@@ -230,16 +245,31 @@ document.getElementById('btnSubmitReport').addEventListener('click', async () =>
     const estId = parseInt(document.getElementById('reportEstSelect').value);
     const hasGen = document.getElementById('reportGenerator').checked;
     const occDelta = parseInt(document.getElementById('reportOccupancy').value) || 0;
+    const hazard = document.getElementById('reportHazard').checked;
+    const feedback = document.getElementById('reportFeedback');
 
-    await fetch('/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: estId, generator: hasGen, occupied: occDelta })
-    });
+    try {
+        const res = await fetch('/api/reports', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: estId, generator: hasGen, occupied: occDelta, hazard })
+        });
+        const data = await res.json();
+        await loadData();
 
-    closeModal('reportModal');
-    loadData();
+        if (!res.ok || data.warning) {
+            feedback.className = 'px-6 pb-4 text-[11px] font-semibold text-rose-600';
+            feedback.innerText = data.error || data.warning;
+            return;
+        }
+        document.getElementById('reportHazard').checked = false;
+        closeModal('reportModal');
+    } catch (err) {
+        feedback.className = 'px-6 pb-4 text-[11px] font-semibold text-rose-600';
+        feedback.innerText = 'Не вдалося зв\'язатися з сервером';
+    }
 });
 
 document.getElementById('refreshBtn').addEventListener('click', loadData);
+syncAlertLevel();
 loadData();

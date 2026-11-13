@@ -18,7 +18,7 @@ shared_ptr<Establishment> RoutePlanner::find_nearest_shelter(const Coordinates& 
 
     for (const auto& node : map_nodes) {
         if (node->is_accessible(current_alert_level) && node->can_shelter_more()) {
-            double dist = node->distance_to(MapNode(0, from_loc));
+            double dist = from_loc.distance_to(node->get_coordinates());
             if (min_distance < 0 || dist < min_distance) {
                 min_distance = dist;
                 nearest = node;
@@ -26,6 +26,13 @@ shared_ptr<Establishment> RoutePlanner::find_nearest_shelter(const Coordinates& 
         }
     }
     return nearest;
+}
+
+shared_ptr<Establishment> RoutePlanner::find_by_id(int id) const {
+    for (const auto& node : map_nodes) {
+        if (node->get_id() == id) return node;
+    }
+    return nullptr;
 }
 
 void RoutePlanner::process_user_report(shared_ptr<Report> report, shared_ptr<Establishment> target) {

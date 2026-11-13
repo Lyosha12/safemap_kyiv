@@ -4,9 +4,12 @@
 #endif
 #endif
 
+#include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -58,6 +61,58 @@ std::string resolve_web_root(const std::string& configured) {
     return {};
 }
 
+std::string alert_level_name(AlertLevel level) {
+    switch (level) {
+        case AlertLevel::Red: return "red";
+        case AlertLevel::Yellow: return "yellow";
+        default: return "none";
+    }
+}
+
+std::optional<AlertLevel> parse_alert_level(const std::string& name) {
+    if (name == "none") return AlertLevel::None;
+    if (name == "yellow") return AlertLevel::Yellow;
+    if (name == "red") return AlertLevel::Red;
+    return std::nullopt;
+}
+
+std::optional<Coordinates> parse_coordinates(const httplib::Request& req) {
+    if (!req.has_param("lat") || !req.has_param("lng")) return std::nullopt;
+    try {
+        double lat = std::stod(req.get_param_value("lat"));
+        double lng = std::stod(req.get_param_value("lng"));
+        if (lat < -90.0 || lat > 90.0 || lng < -180.0 || lng > 180.0) return std::nullopt;
+        return Coordinates(lat, lng);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
+void send_error(httplib::Response& res, int status, const std::string& message) {
+    res.status = status;
+    res.set_content(json{{"error", message}}.dump(), "application/json");
+}
+
+json establishment_to_json(const Establishment& est, AlertLevel alert) {
+    const Shelter shelter = est.get_shelter();
+    const Coordinates coords = est.get_coordinates();
+    return {
+        {"id", est.get_id()},
+        {"name", est.get_name()},
+        {"type", est.get_type_name()},
+        {"type_key", est.get_type_key()},
+        {"lat", coords.get_latitude()},
+        {"lng", coords.get_longitude()},
+        {"address", est.get_address()},
+        {"source", est.get_data_source()},
+        {"generator", est.has_backup_power()},
+        {"shelter_capacity", shelter.get_capacity()},
+        {"shelter_free", std::max(0, shelter.get_free_places())},
+        {"shelter_underground", shelter.is_underground_shelter()},
+        {"accessible", est.is_accessible(alert)}
+    };
+}
+
 }
 
 int main() {
@@ -106,127 +161,113 @@ int main() {
     svr.set_file_extension_and_mimetype_mapping("svg", "image/svg+xml");
     std::cout << "[Фронтенд] Роздаю статичні файли з " << web_root << std::endl;
 
-    svr.Get("/api/establishments", [&planner](const httplib::Request&, httplib::Response& res) {
+    std::mutex planner_mutex;
+
+    svr.Get("/api/establishments", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(planner_mutex);
         json response = json::array();
-        const auto& list = planner.get_establishments();
-        auto alert = planner.get_alert_level();
-
-        for (size_t i = 0; i < list.size(); ++i) {
-            const auto& est = list[i];
-            auto coords = est->get_coordinates();
-            int cap = est->get_shelter().get_capacity();
-            int occ = est->get_shelter().get_current_occupancy();
-            int freeShelter = cap - occ;
-
-            json item = {
-                {"id", static_cast<int>(i + 1)},
-                {"name", est->get_name()},
-                {"type", est->get_type_name()},
-                {"lat", coords.get_latitude()},
-                {"lng", coords.get_longitude()},
-                {"generator", est->has_backup_power()},
-                {"shelter_capacity", cap},
-                {"shelter_free", freeShelter > 0 ? freeShelter : 0},
-                {"accessible", est->is_accessible(alert)}
-            };
-            response.push_back(item);
+        AlertLevel alert = planner.get_alert_level();
+        for (const auto& est : planner.get_establishments()) {
+            response.push_back(establishment_to_json(*est, alert));
         }
-
-        res.set_content(response.dump(4), "application/json");
+        res.set_content(response.dump(), "application/json");
     });
 
-    svr.Post("/api/alert", [&planner](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = json::parse(req.body);
-            std::string level = body.value("level", "none");
-
-            if (level == "red") {
-                planner.set_alert_level(AlertLevel::Red);
-            } else if (level == "yellow") {
-                planner.set_alert_level(AlertLevel::Yellow);
-            } else {
-                planner.set_alert_level(AlertLevel::None);
-            }
-
-            json reply = {{"status", "success"}, {"level", level}};
-            res.set_content(reply.dump(), "application/json");
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"error": "Invalid JSON"})", "application/json");
-        }
+    svr.Get("/api/alert", [&](const httplib::Request&, httplib::Response& res) {
+        std::lock_guard<std::mutex> lock(planner_mutex);
+        res.set_content(json{{"level", alert_level_name(planner.get_alert_level())}}.dump(), "application/json");
     });
 
-    svr.Post("/api/reports", [&planner](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto body = json::parse(req.body);
-            int estId = body.value("id", -1);
-            bool hasPower = body.value("generator", true);
-            int addOccupancy = body.value("occupied", 0);
-
-            std::cout << "[Звіт отримано] ID: " << estId
-                      << ", Генератор: " << (hasPower ? "Так" : "Ні")
-                      << ", Зміна кількості людей: " << addOccupancy << std::endl;
-
-            json reply = {{"status", "received"}};
-            res.set_content(reply.dump(), "application/json");
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"error": "Invalid request"})", "application/json");
+    svr.Post("/api/alert", [&](const httplib::Request& req, httplib::Response& res) {
+        json body = json::parse(req.body, nullptr, false);
+        if (body.is_discarded() || !body.is_object()) {
+            send_error(res, 400, "Некоректний JSON");
+            return;
         }
+        auto level = parse_alert_level(body.value("level", ""));
+        if (!level) {
+            send_error(res, 400, "Невідомий рівень тривоги (очікується none, yellow або red)");
+            return;
+        }
+        std::lock_guard<std::mutex> lock(planner_mutex);
+        planner.set_alert_level(*level);
+        std::cout << "[Тривога] Рівень змінено на " << alert_level_name(*level) << std::endl;
+        res.set_content(json{{"status", "success"}, {"level", alert_level_name(*level)}}.dump(), "application/json");
     });
 
-    svr.Get("/api/nearest-shelter", [&planner](const httplib::Request& req, httplib::Response& res) {
-        if (!req.has_param("lat") || !req.has_param("lng")) {
-            res.status = 400;
-            res.set_content(R"({"error": "Missing coordinates"})", "application/json");
+    svr.Post("/api/reports", [&](const httplib::Request& req, httplib::Response& res) {
+        json body = json::parse(req.body, nullptr, false);
+        if (body.is_discarded() || !body.is_object() || !body.contains("id") || !body["id"].is_number_integer()) {
+            send_error(res, 400, "Очікується JSON з цілим полем id");
+            return;
+        }
+        int est_id = body["id"].get<int>();
+        bool has_power = body.value("generator", true);
+        int occupancy_delta = body.value("occupied", 0);
+        bool hazard = body.value("hazard", false);
+        User author(body.value("author", std::string("Диспетчер (веб)")));
+
+        std::lock_guard<std::mutex> lock(planner_mutex);
+        auto target = planner.find_by_id(est_id);
+        if (!target) {
+            send_error(res, 404, "Заклад з id " + std::to_string(est_id) + " не знайдено");
             return;
         }
 
-        double userLat = std::stod(req.get_param_value("lat"));
-        double userLng = std::stod(req.get_param_value("lng"));
-        Coordinates userCoords(userLat, userLng);
-
-        const auto& list = planner.get_establishments();
-        std::shared_ptr<Establishment> bestShelter = nullptr;
-        double minDistance = 1e9;
-
-        std::cout << "\n[Пошук укриття] Клік користувача: " << userLat << ", " << userLng << std::endl;
-
-        for (const auto& est : list) {
-            int cap = est->get_shelter().get_capacity();
-            int occ = est->get_shelter().get_current_occupancy();
-            int freeShelter = cap - occ;
-
-            double dist = userCoords.distance_to(est->get_coordinates());
-            std::cout << " -> Перевірка: " << est->get_name()
-                      << " | Місць: " << freeShelter << "/" << cap
-                      << " | Відстань: " << dist << " км" << std::endl;
-
-            if (cap > 0 && freeShelter > 0) {
-                if (dist < minDistance) {
-                    minDistance = dist;
-                    bestShelter = est;
-                }
-            }
-        }
-
-        if (bestShelter) {
-            int freePlaces = bestShelter->get_shelter().get_capacity() - bestShelter->get_shelter().get_current_occupancy();
-            std::cout << "[Знайдено!] Найближче: " << bestShelter->get_name() << " (" << minDistance << " км)\n" << std::endl;
-
-            json result = {
-                {"found", true},
-                {"name", bestShelter->get_name()},
-                {"lat", bestShelter->get_coordinates().get_latitude()},
-                {"lng", bestShelter->get_coordinates().get_longitude()},
-                {"distance_km", std::round(minDistance * 100.0) / 100.0},
-                {"free_places", freePlaces}
-            };
-            res.set_content(result.dump(4), "application/json");
+        int occupancy_before = target->get_shelter().get_current_occupancy();
+        std::shared_ptr<Report> report;
+        if (hazard) {
+            report = std::make_shared<HazardReport>(author, true);
         } else {
-            std::cout << "[Не знайдено] Жоден об'єкт не підійшов під критерії укриття.\n" << std::endl;
-            res.set_content(R"({"found": false, "message": "Доступних укриттів із вільними місцями не знайдено"})", "application/json");
+            report = std::make_shared<StatusReport>(author, has_power, occupancy_delta);
         }
+        planner.process_user_report(report, target);
+
+        bool occupancy_applied = hazard || occupancy_delta == 0 ||
+                                 target->get_shelter().get_current_occupancy() != occupancy_before;
+        std::cout << "[Звіт] " << target->get_name() << " (id " << est_id << "): "
+                  << (hazard ? "небезпека, заклад закрито" : "оновлено стан") << std::endl;
+
+        json reply = {
+            {"status", "applied"},
+            {"occupancy_applied", occupancy_applied},
+            {"establishment", establishment_to_json(*target, planner.get_alert_level())}
+        };
+        if (!occupancy_applied) {
+            reply["warning"] = "Кількість людей не змінено: результат виходить за межі місткості укриття";
+        }
+        res.set_content(reply.dump(), "application/json");
+    });
+
+    svr.Get("/api/nearest-shelter", [&](const httplib::Request& req, httplib::Response& res) {
+        auto user_coords = parse_coordinates(req);
+        if (!user_coords) {
+            send_error(res, 400, "Потрібні коректні параметри lat і lng");
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(planner_mutex);
+        auto shelter = planner.find_nearest_shelter(*user_coords);
+        if (!shelter) {
+            res.set_content(json{{"found", false},
+                                 {"message", "Доступних укриттів із вільними місцями не знайдено"}}.dump(),
+                            "application/json");
+            return;
+        }
+
+        double distance_km = user_coords->distance_to(shelter->get_coordinates());
+        std::cout << "[Укриття] Найближче: " << shelter->get_name() << " (" << distance_km << " км)" << std::endl;
+
+        json result = {
+            {"found", true},
+            {"id", shelter->get_id()},
+            {"name", shelter->get_name()},
+            {"lat", shelter->get_coordinates().get_latitude()},
+            {"lng", shelter->get_coordinates().get_longitude()},
+            {"distance_km", std::round(distance_km * 100.0) / 100.0},
+            {"free_places", shelter->get_shelter().get_free_places()}
+        };
+        res.set_content(result.dump(), "application/json");
     });
 
     std::string host = config["host"].get<std::string>();

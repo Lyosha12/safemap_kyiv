@@ -5,8 +5,22 @@ using namespace std;
 
 Coordinates::Coordinates(double lat, double lon) : latitude(lat), longitude(lon) {}
 
+namespace {
+constexpr double kEarthRadiusKm = 6371.0;
+constexpr double kPi = 3.14159265358979323846;
+
+double to_radians(double degrees) {
+    return degrees * kPi / 180.0;
+}
+}
+
 double Coordinates::calculate_distance_to(const Coordinates& other) const {
-    return 0.0; 
+    double d_lat = to_radians(other.latitude - latitude);
+    double d_lon = to_radians(other.longitude - longitude);
+    double a = sin(d_lat / 2) * sin(d_lat / 2) +
+               cos(to_radians(latitude)) * cos(to_radians(other.latitude)) *
+               sin(d_lon / 2) * sin(d_lon / 2);
+    return 2.0 * kEarthRadiusKm * atan2(sqrt(a), sqrt(1.0 - a));
 }
 
 bool Coordinates::is_within_radius(const Coordinates& center, double radius) const {
@@ -16,7 +30,8 @@ bool Coordinates::is_within_radius(const Coordinates& center, double radius) con
 Shelter::Shelter(int cap, bool underground) : capacity(cap), current_occupancy(0), is_underground(underground) {}
 
 bool Shelter::try_admit_people(int count) {
-    if (current_occupancy + count <= capacity) {
+    int updated = current_occupancy + count;
+    if (updated >= 0 && updated <= capacity) {
         current_occupancy += count;
         return true;
     }

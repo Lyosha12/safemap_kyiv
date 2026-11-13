@@ -19,6 +19,7 @@ public:
     virtual ~MapNode() = default;
     double distance_to(const MapNode& other) const;
     Coordinates get_location() const;
+    int get_id() const { return id; }
 };
 
 class Establishment : public MapNode {

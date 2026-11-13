@@ -29,7 +29,7 @@ void Establishment::apply_crowdsource_data(bool gen_state, int shelter_influx) {
 }
 
 bool Establishment::can_shelter_more() const {
-    return base_shelter.get_occupancy_rate() < 1.0;
+    return base_shelter.get_capacity() > 0 && base_shelter.get_occupancy_rate() < 1.0;
 }
 
 void Establishment::set_origin(string addr, string source) {

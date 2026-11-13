@@ -37,4 +37,6 @@ public:
 
     int get_capacity() const { return capacity; }
     int get_current_occupancy() const { return current_occupancy; }
+    int get_free_places() const { return capacity - current_occupancy; }
+    bool is_underground_shelter() const { return is_underground; }
 };
