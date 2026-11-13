@@ -32,6 +32,11 @@ bool Establishment::can_shelter_more() const {
     return base_shelter.get_occupancy_rate() < 1.0;
 }
 
+void Establishment::set_origin(string addr, string source) {
+    address = move(addr);
+    data_source = move(source);
+}
+
 Supermarket::Supermarket(int id, Coordinates loc, string n, Shelter s, bool gen, bool food)
     : Establishment(id, loc, n, s, gen), has_food_reserves(food) {}
 
@@ -56,4 +61,40 @@ bool PostOffice::is_accessible(AlertLevel level) const {
 
 bool PostOffice::can_accept_parcel(double weight) const {
     return weight <= max_parcel_weight;
+}
+
+Pharmacy::Pharmacy(int id, Coordinates loc, string n, Shelter s, bool gen, bool round_the_clock)
+    : Establishment(id, loc, n, s, gen), open_24h(round_the_clock) {}
+
+bool Pharmacy::is_accessible(AlertLevel level) const {
+    if (is_temporarily_closed) return false;
+    if (level == AlertLevel::Red) return open_24h && has_generator;
+    return true;
+}
+
+PublicShelter::PublicShelter(int id, Coordinates loc, string n, Shelter s, bool gen)
+    : Establishment(id, loc, n, s, gen) {}
+
+bool PublicShelter::is_accessible(AlertLevel) const {
+    return !is_temporarily_closed;
+}
+
+Cafe::Cafe(int id, Coordinates loc, string n, Shelter s, bool gen, bool wifi)
+    : Establishment(id, loc, n, s, gen), has_wifi(wifi) {}
+
+bool Cafe::is_accessible(AlertLevel level) const {
+    if (is_temporarily_closed) return false;
+    if (level == AlertLevel::Red) return false;
+    if (level == AlertLevel::Yellow) return has_generator;
+    return true;
+}
+
+GasStation::GasStation(int id, Coordinates loc, string n, Shelter s, bool gen, bool round_the_clock)
+    : Establishment(id, loc, n, s, gen), open_24h(round_the_clock) {}
+
+bool GasStation::is_accessible(AlertLevel level) const {
+    if (is_temporarily_closed) return false;
+    if (level == AlertLevel::Red) return false;
+    if (level == AlertLevel::Yellow) return open_24h || has_generator;
+    return true;
 }

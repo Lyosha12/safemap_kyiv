@@ -18,6 +18,10 @@ add_executable(safemap_kyiv
         Crowdsourcing.cpp
         RoutePlanner.h
         RoutePlanner.cpp
+        EstablishmentFactory.h
+        EstablishmentFactory.cpp
+        DataLoader.h
+        DataLoader.cpp
 )
 
 if(WIN32)

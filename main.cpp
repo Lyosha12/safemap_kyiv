@@ -7,10 +7,12 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 #include "httplib.h"
 #include "json.hpp"
+#include "DataLoader.h"
 #include "RoutePlanner.h"
 #include "Establishments.h"
 #include "Infrastructure.h"
@@ -24,7 +26,8 @@ namespace {
 const std::vector<std::string> kSearchPrefixes = {"", "../"};
 
 json load_config() {
-    json defaults = {{"host", "0.0.0.0"}, {"port", 8080}, {"web_root", "web"}};
+    json defaults = {{"host", "0.0.0.0"}, {"port", 8080}, {"web_root", "web"},
+                     {"data_file", "data/establishments.csv"}};
     for (const auto& prefix : kSearchPrefixes) {
         std::ifstream file(prefix + "config.json");
         if (!file.is_open()) continue;
@@ -38,6 +41,13 @@ json load_config() {
         break;
     }
     return defaults;
+}
+
+std::optional<std::string> resolve_existing(const std::string& relative) {
+    for (const auto& prefix : kSearchPrefixes) {
+        if (std::ifstream(prefix + relative).good()) return prefix + relative;
+    }
+    return std::nullopt;
 }
 
 std::string resolve_web_root(const std::string& configured) {
@@ -55,37 +65,25 @@ int main() {
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
 #endif
+    json config = load_config();
     RoutePlanner planner;
 
-    auto silpo = std::make_shared<Supermarket>(
-        1,
-        Coordinates(50.4385, 30.5234),
-        "Сільпо (ТРЦ Gulliver)",
-        Shelter(150, true),
-        true,
-        true
-    );
-    planner.add_establishment(silpo);
-
-    auto novaPoshta = std::make_shared<PostOffice>(
-        2,
-        Coordinates(50.4511, 30.5211),
-        "Нова Пошта №1",
-        Shelter(0, false),
-        false,
-        30.0
-    );
-    planner.add_establishment(novaPoshta);
-
-    auto oceanPlaza = std::make_shared<Supermarket>(
-        3,
-        Coordinates(50.4128, 30.5245),
-        "Ашан (Ocean Plaza)",
-        Shelter(300, true),
-        true,
-        true
-    );
-    planner.add_establishment(oceanPlaza);
+    auto data_file = resolve_existing(config["data_file"].get<std::string>());
+    if (!data_file) {
+        std::cerr << "[Помилка] Не знайдено файл даних '" << config["data_file"].get<std::string>() << "'" << std::endl;
+        return 1;
+    }
+    try {
+        DataLoader loader(std::make_unique<CsvDataSource>(*data_file), EstablishmentFactory::with_default_types());
+        LoadSummary summary = loader.load_into(planner);
+        std::cout << "[Дані] Завантажено " << summary.loaded << " закладів з " << *data_file << std::endl;
+        for (const auto& issue : summary.issues) {
+            std::cerr << "[Дані] Рядок " << issue.line << " пропущено: " << issue.message << std::endl;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Помилка] Не вдалося прочитати " << *data_file << ": " << e.what() << std::endl;
+        return 1;
+    }
 
     httplib::Server svr;
 
@@ -99,7 +97,6 @@ int main() {
         res.status = 204;
     });
 
-    json config = load_config();
     std::string web_root = resolve_web_root(config["web_root"].get<std::string>());
     if (web_root.empty() || !svr.set_mount_point("/", web_root)) {
         std::cerr << "[Помилка] Не знайдено папку фронтенду '" << config["web_root"].get<std::string>()
