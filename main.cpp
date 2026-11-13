@@ -6,8 +6,9 @@
 
 #include <iostream>
 #include <fstream>
-#include <sstream>
 #include <memory>
+#include <string>
+#include <vector>
 #include "httplib.h"
 #include "json.hpp"
 #include "RoutePlanner.h"
@@ -17,6 +18,37 @@
 #include <windows.h>
 
 using json = nlohmann::json;
+
+namespace {
+
+const std::vector<std::string> kSearchPrefixes = {"", "../"};
+
+json load_config() {
+    json defaults = {{"host", "0.0.0.0"}, {"port", 8080}, {"web_root", "web"}};
+    for (const auto& prefix : kSearchPrefixes) {
+        std::ifstream file(prefix + "config.json");
+        if (!file.is_open()) continue;
+        try {
+            json loaded = json::parse(file);
+            defaults.update(loaded);
+            std::cout << "[Конфіг] Завантажено " << prefix << "config.json" << std::endl;
+        } catch (const json::parse_error& e) {
+            std::cerr << "[Конфіг] Помилка у config.json: " << e.what() << std::endl;
+        }
+        break;
+    }
+    return defaults;
+}
+
+std::string resolve_web_root(const std::string& configured) {
+    for (const auto& prefix : kSearchPrefixes) {
+        std::string candidate = prefix + configured;
+        if (std::ifstream(candidate + "/index.html").good()) return candidate;
+    }
+    return {};
+}
+
+}
 
 int main() {
 #ifdef _WIN32
@@ -67,23 +99,15 @@ int main() {
         res.status = 204;
     });
 
-    svr.Get("/", [](const httplib::Request&, httplib::Response& res) {
-        std::string html_path = "../index.html";
-        std::ifstream file(html_path);
-        if (!file.is_open()) {
-            html_path = "index.html";
-            file.open(html_path);
-        }
-
-        if (file.is_open()) {
-            std::stringstream buffer;
-            buffer << file.rdbuf();
-            res.set_content(buffer.str(), "text/html; charset=utf-8");
-        } else {
-            res.status = 404;
-            res.set_content("<h1>Файл index.html не знайдено!</h1>", "text/html; charset=utf-8");
-        }
-    });
+    json config = load_config();
+    std::string web_root = resolve_web_root(config["web_root"].get<std::string>());
+    if (web_root.empty() || !svr.set_mount_point("/", web_root)) {
+        std::cerr << "[Помилка] Не знайдено папку фронтенду '" << config["web_root"].get<std::string>()
+                  << "' з index.html" << std::endl;
+        return 1;
+    }
+    svr.set_file_extension_and_mimetype_mapping("svg", "image/svg+xml");
+    std::cout << "[Фронтенд] Роздаю статичні файли з " << web_root << std::endl;
 
     svr.Get("/api/establishments", [&planner](const httplib::Request&, httplib::Response& res) {
         json response = json::array();
@@ -208,8 +232,13 @@ int main() {
         }
     });
 
-    std::cout << "Сервер SafeMap Kyiv працює на http://localhost:8080" << std::endl;
-    svr.listen("0.0.0.0", 8080);
+    std::string host = config["host"].get<std::string>();
+    int port = config["port"].get<int>();
+    std::cout << "Сервер SafeMap Kyiv працює на http://localhost:" << port << std::endl;
+    if (!svr.listen(host, port)) {
+        std::cerr << "[Помилка] Не вдалося запустити сервер на порту " << port << std::endl;
+        return 1;
+    }
 
     return 0;
 }
