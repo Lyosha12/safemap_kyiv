@@ -39,10 +39,24 @@
 *.out
 *.app
 
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
 # Build directories
 build/
 Build/
 build-*/
+cmake-build-debug/
+cmake-build-release/
+
+# Generated files
+safemap.html
+
+# Project context for AI
+PROJECT_CONTEXT.md
 
 # CMake generated files
 CMakeFiles/
