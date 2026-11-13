@@ -81,7 +81,14 @@
                 <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
                 <input id="searchInput" type="search" placeholder="Пошук за назвою або адресою" autocomplete="off">
             </div>
-            <div class="chips" id="typeFilters"></div>
+            <div class="filter-group">
+                <span class="filter-label">Коли працює</span>
+                <div class="chips" id="tierFilters"></div>
+            </div>
+            <div class="filter-group">
+                <span class="filter-label">Тип</span>
+                <div class="chips" id="typeFilters"></div>
+            </div>
             <label class="switch-row">
                 <input type="checkbox" id="onlyOpen">
                 <span class="switch"></span>
@@ -112,9 +119,10 @@
 
         <div class="legend">
             <span><i class="legend-dot shelter"></i>Укриття</span>
-            <span><i class="legend-dot with-shelter"></i>Заклад з укриттям</span>
-            <span><i class="legend-dot place"></i>Заклад</span>
-            <span><i class="legend-dot closed"></i>Зачинено</span>
+            <span><i class="legend-dot tier-red"></i>Працює під час тривоги</span>
+            <span><i class="legend-dot tier-yellow"></i>Працює при жовтому рівні</span>
+            <span><i class="legend-dot tier-none"></i>Не працює під час тривоги</span>
+            <span><i class="legend-dot closed"></i>Зачинено зараз</span>
         </div>
 
         <div id="routeCard" class="route-card" hidden>

@@ -38,6 +38,7 @@ const state = {
     markers: new Map(),
     alertLevel: 'none',
     typeFilter: 'all',
+    tierFilter: 'all',
     search: '',
     onlyOpen: false,
     isNavMode: false,
@@ -72,16 +73,38 @@ function iconSvg(typeKey) {
     return `<svg viewBox="0 0 24 24">${TYPE_ICONS[typeKey] || TYPE_ICONS.default}</svg>`;
 }
 
-function markerVariant(item) {
-    if (!item.accessible) return 'closed';
-    if (item.type_key === 'shelter') return 'shelter';
-    return item.shelter_capacity > 0 ? 'with-shelter' : 'place';
+const TIERS = {
+    red: { label: 'Працює під час тривоги', short: 'Під час тривоги' },
+    yellow: { label: 'Працює при жовтому рівні', short: 'При жовтому рівні' },
+    none: { label: 'Не працює під час тривоги', short: 'Не працює під час тривоги' },
+    closed: { label: 'Зачинено через звіт про небезпеку', short: 'Зачинено' }
+};
+const TIER_ORDER = ['red', 'yellow', 'none', 'closed'];
+
+function tierOf(item) {
+    const a = item.availability;
+    if (!a.none) return 'closed';
+    if (a.red) return 'red';
+    if (a.yellow) return 'yellow';
+    return 'none';
+}
+
+function tierBadge(item) {
+    const tier = tierOf(item);
+    return `<span class="tier tier-${tier}"><i></i>${TIERS[tier].label}</span>`;
+}
+
+function markerClasses(item) {
+    const classes = [`tier-${tierOf(item)}`];
+    if (item.type_key === 'shelter') classes.push('shelter');
+    if (!item.accessible) classes.push('closed');
+    return classes.join(' ');
 }
 
 function createMarkerIcon(item) {
     return L.divIcon({
         className: '',
-        html: `<div class="map-pin ${markerVariant(item)}">${iconSvg(item.type_key)}</div>`,
+        html: `<div class="map-pin ${markerClasses(item)}">${iconSvg(item.type_key)}</div>`,
         iconSize: [32, 32],
         iconAnchor: [16, 34],
         popupAnchor: [0, -32]
@@ -112,6 +135,7 @@ function showToast(message, kind = 'info') {
 
 function matchesFilters(item) {
     if (state.typeFilter !== 'all' && item.type_key !== state.typeFilter) return false;
+    if (state.tierFilter !== 'all' && tierOf(item) !== state.tierFilter) return false;
     if (state.onlyOpen && !item.accessible) return false;
     if (state.search) {
         const haystack = `${item.name} ${item.address || ''} ${item.type}`.toLowerCase();
@@ -122,8 +146,24 @@ function matchesFilters(item) {
 
 function sortForList(a, b) {
     if (a.accessible !== b.accessible) return a.accessible ? -1 : 1;
+    const tierDiff = TIER_ORDER.indexOf(tierOf(a)) - TIER_ORDER.indexOf(tierOf(b));
+    if (tierDiff !== 0) return tierDiff;
     if ((a.type_key === 'shelter') !== (b.type_key === 'shelter')) return a.type_key === 'shelter' ? -1 : 1;
     return a.name.localeCompare(b.name, 'uk');
+}
+
+function renderTierFilters() {
+    const counts = new Map();
+    state.establishments.forEach(item => counts.set(tierOf(item), (counts.get(tierOf(item)) || 0) + 1));
+    if (state.tierFilter !== 'all' && !counts.has(state.tierFilter)) state.tierFilter = 'all';
+
+    const chips = [['all', 'Будь-коли', state.establishments.length],
+        ...TIER_ORDER.filter(t => counts.has(t)).map(t => [t, TIERS[t].short, counts.get(t)])];
+
+    $('tierFilters').innerHTML = chips.map(([key, label, count]) => `
+        <button class="chip tier-chip ${key !== 'all' ? `tier-${key}` : ''} ${state.tierFilter === key ? 'active' : ''}" data-tier="${key}">
+            ${key !== 'all' ? '<i></i>' : ''}${escapeHtml(label)} <span class="chip-count">${count}</span>
+        </button>`).join('');
 }
 
 function renderTypeFilters() {
@@ -146,6 +186,7 @@ function popupHtml(item) {
         <div class="popup-type">${escapeHtml(item.type)}</div>
         <div class="popup-name">${escapeHtml(item.name)}</div>
         <div class="popup-row">${statusBadge(item)}<span>${shelterText(item)}</span></div>
+        <div class="popup-tier">${tierBadge(item)}</div>
         <button class="btn btn-ghost btn-sm btn-block" onclick="showDetails(${item.id})">Детальніше</button>`;
 }
 
@@ -180,6 +221,7 @@ function renderList() {
                 <span class="location-meta">${item.type_key === 'shelter'
                     ? `${escapeHtml(item.address || item.type)} · місць: <b>${item.shelter_free}</b> / ${item.shelter_capacity}`
                     : `${escapeHtml(item.type)} · ${shelterText(item)}`}</span>
+                ${tierBadge(item)}
             </span>
             ${statusBadge(item)}
         </button>`).join('');
@@ -196,6 +238,7 @@ function renderReportOptions() {
 }
 
 function renderAll() {
+    renderTierFilters();
     renderTypeFilters();
     renderMap();
     renderList();
@@ -430,8 +473,22 @@ window.showDetails = function (id) {
     $('detailsType').textContent = item.type;
     $('detailsName').textContent = item.name;
 
+    const levels = [
+        ['none', 'Відбій'],
+        ['yellow', 'Жовтий рівень'],
+        ['red', 'Повітряна тривога']
+    ];
+    const schedule = levels.map(([level, label]) => {
+        const works = item.availability[level];
+        return `<div class="level-cell level-${level} ${works ? 'works' : 'off'} ${state.alertLevel === level ? 'current' : ''}">
+            <span class="level-name">${label}</span>
+            <span class="level-state">${works ? 'Працює' : 'Не працює'}</span>
+        </div>`;
+    }).join('');
+
     const rows = [
-        detailRow('Статус', item.accessible ? 'Відчинено' : 'Зачинено', item.accessible ? 'good' : 'bad'),
+        detailRow('Зараз', item.accessible ? 'Відчинено' : 'Зачинено', item.accessible ? 'good' : 'bad'),
+        `<div class="level-grid">${schedule}</div>`,
         item.address ? detailRow('Адреса', escapeHtml(item.address)) : '',
         detailRow('Резервне живлення', item.generator ? 'Є генератор' : 'Немає', item.generator ? 'good' : ''),
     ];
@@ -495,6 +552,15 @@ function setSheetState(mode) {
 $('alertSwitch').addEventListener('click', (e) => {
     const btn = e.target.closest('.alert-option');
     if (btn && btn.dataset.level !== state.alertLevel) changeAlertLevel(btn.dataset.level);
+});
+
+$('tierFilters').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    state.tierFilter = chip.dataset.tier;
+    renderTierFilters();
+    renderMap();
+    renderList();
 });
 
 $('typeFilters').addEventListener('click', (e) => {

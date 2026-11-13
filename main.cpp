@@ -109,7 +109,12 @@ json establishment_to_json(const Establishment& est, AlertLevel alert) {
         {"shelter_capacity", shelter.get_capacity()},
         {"shelter_free", std::max(0, shelter.get_free_places())},
         {"shelter_underground", shelter.is_underground_shelter()},
-        {"accessible", est.is_accessible(alert)}
+        {"accessible", est.is_accessible(alert)},
+        {"availability", {
+            {"none", est.is_accessible(AlertLevel::None)},
+            {"yellow", est.is_accessible(AlertLevel::Yellow)},
+            {"red", est.is_accessible(AlertLevel::Red)}
+        }}
     };
 }
 

@@ -15,6 +15,9 @@
     --open: #3DDC97;
     --closed: #FF6B6B;
     --muted: #4B5263;
+    --tier-red: #3DDC97;
+    --tier-yellow: #FFD700;
+    --tier-none: #8A93A6;
     --radius: 14px;
     --radius-sm: 10px;
     --shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
@@ -556,9 +559,86 @@ input:focus-visible + .switch { outline: 2px solid var(--yellow); outline-offset
 }
 
 .legend-dot.shelter { background: var(--blue); border-color: var(--yellow); }
-.legend-dot.with-shelter { background: var(--surface-2); border-color: var(--blue-bright); }
-.legend-dot.place { background: var(--surface-2); border-color: var(--text-2); }
+.legend-dot.tier-red { background: var(--surface-2); border-color: var(--tier-red); }
+.legend-dot.tier-yellow { background: var(--surface-2); border-color: var(--tier-yellow); }
+.legend-dot.tier-none { background: var(--surface-2); border-color: var(--tier-none); }
 .legend-dot.closed { background: var(--muted); border-color: var(--muted); }
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-3);
+}
+
+.tier-chip i,
+.tier i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: currentColor;
+}
+
+.tier-chip.tier-red i { background: var(--tier-red); }
+.tier-chip.tier-yellow i { background: var(--tier-yellow); }
+.tier-chip.tier-none i { background: var(--tier-none); }
+.tier-chip.tier-closed i { background: var(--closed); }
+
+.tier {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 11.5px;
+    font-weight: 700;
+}
+
+.tier-red.tier { color: var(--tier-red); }
+.tier-yellow.tier { color: var(--tier-yellow); }
+.tier-none.tier { color: var(--tier-none); }
+.tier-closed.tier { color: var(--closed); }
+
+.popup-tier { margin: -4px 0 10px; }
+
+.level-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    padding: 4px 0 6px;
+}
+
+.level-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-2);
+}
+
+.level-cell.current { border-color: var(--text-2); }
+
+.level-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-3);
+}
+
+.level-cell.level-yellow .level-name { color: var(--yellow); }
+.level-cell.level-red .level-name { color: var(--closed); }
+
+.level-state { font-size: 13px; font-weight: 800; }
+.level-cell.works .level-state { color: var(--open); }
+.level-cell.off .level-state { color: var(--text-3); }
 
 .route-card {
     position: absolute;
@@ -662,7 +742,9 @@ input:focus-visible + .switch { outline: 2px solid var(--yellow); outline-offset
     color: var(--text);
 }
 
-.map-pin.with-shelter { border-color: var(--blue-bright); }
+.map-pin.tier-red { border-color: var(--tier-red); }
+.map-pin.tier-yellow { border-color: var(--tier-yellow); }
+.map-pin.tier-none { border-color: var(--tier-none); }
 .map-pin.shelter { background: var(--blue); border-color: var(--yellow); }
 .map-pin.shelter svg { color: var(--yellow); }
 .map-pin.closed { background: var(--muted); border-color: var(--muted); box-shadow: none; }
