@@ -66,9 +66,17 @@
             </button>
         </div>
 
+        <div class="flex items-center gap-2">
+            <div id="travelModeToggle" class="flex-1 grid grid-cols-2 p-1 bg-zinc-100 rounded-xl border border-zinc-200/70 text-xs font-semibold">
+                <button data-mode="walk" class="mode-btn py-2 rounded-lg transition bg-white shadow-sm text-zinc-900">🚶 Пішки</button>
+                <button data-mode="drive" class="mode-btn py-2 rounded-lg transition text-zinc-500">🚗 Авто</button>
+            </div>
+            <button id="btnLocateMe" title="Маршрут від мого місцезнаходження" class="p-2.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200/70 rounded-xl text-sm transition">📍</button>
+        </div>
+
         <div id="navBanner" class="hidden p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-900 text-xs font-medium flex items-center space-x-2.5 animate-pulse">
             <span class="text-base">📍</span>
-            <span>Клікніть на карті Києва для розрахунку шляху до найближчого укриття.</span>
+            <span>Клікніть на карті для розрахунку шляху до найближчого укриття.</span>
         </div>
 
         <div>
@@ -91,22 +99,27 @@
             <div>
                     <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60 mb-1.5">
                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                        Маршрут розраховано
+                        <span id="routeBadgeText">Маршрут розраховано</span>
                     </span>
                 <h4 id="routeTargetName" class="text-xs font-bold text-zinc-900 line-clamp-1">—</h4>
             </div>
             <button id="btnCloseRoute" class="text-zinc-400 hover:text-zinc-600 p-1">✕</button>
         </div>
-        <div class="mt-3.5 grid grid-cols-2 gap-2 text-center text-xs">
+        <div class="mt-3.5 grid grid-cols-3 gap-2 text-center text-xs">
             <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
                 <span class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Відстань</span>
-                <span id="routeDistance" class="font-extrabold text-zinc-800 text-xs">0 м</span>
+                <span id="routeDistance" class="font-extrabold text-zinc-800 text-xs">—</span>
+            </div>
+            <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
+                <span id="routeTimeLabel" class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Пішки</span>
+                <span id="routeTime" class="font-extrabold text-zinc-800 text-xs">—</span>
             </div>
             <div class="bg-zinc-50 p-2.5 rounded-xl border border-zinc-100">
                 <span class="text-zinc-400 block text-[9px] uppercase font-bold tracking-wider mb-0.5">Вільних місць</span>
                 <span id="routePlaces" class="font-extrabold text-primary-600 text-xs">0</span>
             </div>
         </div>
+        <p id="routeSource" class="mt-2.5 text-[10px] text-zinc-400 font-medium"></p>
     </div>
 </main>
 

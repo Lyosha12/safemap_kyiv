@@ -2,6 +2,22 @@
 
 using namespace std;
 
+namespace {
+
+struct TravelProfile {
+    double detour_factor;
+    double speed_kmh;
+};
+
+TravelProfile profile_for(TravelMode mode) {
+    switch (mode) {
+        case TravelMode::Drive: return {1.4, 30.0};
+        default: return {1.3, 5.0};
+    }
+}
+
+}
+
 RoutePlanner::RoutePlanner() : current_alert_level(AlertLevel::None) {}
 
 void RoutePlanner::set_alert_level(AlertLevel level) {
@@ -45,4 +61,10 @@ double RoutePlanner::evaluate_route_safety(shared_ptr<Establishment> destination
     if (current_alert_level == AlertLevel::Red) return 0.0;
     if (destination->is_accessible(current_alert_level)) return 100.0;
     return 50.0;
+}
+
+TravelEstimate RoutePlanner::estimate_travel(const Coordinates& from, const Coordinates& to, TravelMode mode) const {
+    TravelProfile profile = profile_for(mode);
+    double distance_km = from.distance_to(to) * profile.detour_factor;
+    return {distance_km, distance_km / profile.speed_kmh * 60.0};
 }

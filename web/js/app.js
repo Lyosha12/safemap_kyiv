@@ -123,10 +123,36 @@ navBtn.addEventListener('click', () => {
     }
 });
 
-function clearNavigation() {
+const ROUTERS = {
+    walk: { url: 'https://routing.openstreetmap.de/routed-foot/route/v1', label: 'Пішки' },
+    drive: { url: 'https://routing.openstreetmap.de/routed-car/route/v1', label: 'Авто' }
+};
+const ROUTE_COLOR = '#4f46e5';
+
+let travelMode = 'walk';
+let routeOrigin = null;
+let fallbackLine = null;
+let routeRequestId = 0;
+
+function formatDistance(km) {
+    return km < 1 ? `${Math.round(km * 1000)} м` : `${km.toFixed(1)} км`;
+}
+
+function formatDuration(minutes) {
+    const total = Math.max(1, Math.round(minutes));
+    if (total < 60) return `${total} хв`;
+    return `${Math.floor(total / 60)} год ${total % 60} хв`;
+}
+
+function clearRoute() {
+    routeRequestId++;
     if (routingControl) {
         map.removeControl(routingControl);
         routingControl = null;
+    }
+    if (fallbackLine) {
+        map.removeLayer(fallbackLine);
+        fallbackLine = null;
     }
     if (userMarker) {
         map.removeLayer(userMarker);
@@ -135,54 +161,123 @@ function clearNavigation() {
     document.getElementById('routeCard').classList.add('hidden');
 }
 
-map.on('click', async (e) => {
-    if (!isNavMode) return;
-    const { lat, lng } = e.latlng;
+function clearNavigation() {
+    clearRoute();
+    routeOrigin = null;
+}
 
-    clearNavigation();
+function showRouteCard(shelter, distanceKm, minutes, sourceText, isEstimate = false) {
+    document.getElementById('routeBadgeText').innerText = isEstimate ? 'Приблизна оцінка' : 'Маршрут розраховано';
+    document.getElementById('routeTargetName').innerText = shelter.name;
+    document.getElementById('routeDistance').innerText = formatDistance(distanceKm);
+    document.getElementById('routeTimeLabel').innerText = ROUTERS[travelMode].label;
+    document.getElementById('routeTime').innerText = formatDuration(minutes);
+    document.getElementById('routePlaces').innerText = shelter.free_places;
+    document.getElementById('routeSource').innerText = sourceText;
+    document.getElementById('routeCard').classList.remove('hidden');
+}
 
-    userMarker = L.circleMarker([lat, lng], {
+function showEstimatedRoute(origin, shelter) {
+    const estimate = shelter.estimates[travelMode];
+    fallbackLine = L.polyline([[origin.lat, origin.lng], [shelter.lat, shelter.lng]], {
+        color: ROUTE_COLOR,
+        weight: 4,
+        opacity: 0.8,
+        dashArray: '6 10'
+    }).addTo(map);
+    map.fitBounds(fallbackLine.getBounds(), { padding: [60, 60] });
+    showRouteCard(shelter, estimate.distance_km, estimate.minutes,
+        'Сервіс маршрутів недоступний — приблизна оцінка (пряма відстань з поправкою на вулиці)', true);
+}
+
+async function buildRoute(origin) {
+    clearRoute();
+    routeOrigin = origin;
+    const requestId = routeRequestId;
+
+    userMarker = L.circleMarker([origin.lat, origin.lng], {
         radius: 7,
-        fillColor: '#4f46e5',
+        fillColor: ROUTE_COLOR,
         color: '#ffffff',
         weight: 3,
         fillOpacity: 1
     }).addTo(map).bindPopup("Ви тут").openPopup();
 
-    const res = await fetch(`/api/nearest-shelter?lat=${lat}&lng=${lng}`);
-    const data = await res.json();
-
-    if (data.found) {
-        routingControl = L.Routing.control({
-            waypoints: [
-                L.latLng(lat, lng),
-                L.latLng(data.lat, data.lng)
-            ],
-            router: L.Routing.osrmv1({
-                serviceUrl: 'https://router.project-osrm.org/route/v1',
-                profile: 'foot'
-            }),
-            lineOptions: {
-                styles: [{ color: '#4f46e5', weight: 5, opacity: 0.9 }]
-            },
-            addWaypoints: false,
-            draggableWaypoints: false,
-            fitSelectedRoutes: true,
-            show: false
-        }).addTo(map);
-
-        routingControl.on('routesfound', function(e) {
-            const summary = e.routes[0].summary;
-
-            document.getElementById('routeTargetName').innerText = data.name;
-            document.getElementById('routeDistance').innerText = Math.round(summary.totalDistance) + ' м (' + Math.round(summary.totalTime / 60) + ' хв)';
-            document.getElementById('routePlaces').innerText = data.free_places;
-            document.getElementById('routeCard').classList.remove('hidden');
-        });
-
-    } else {
-        alert(data.message);
+    let shelter;
+    try {
+        const res = await fetch(`/api/nearest-shelter?lat=${origin.lat}&lng=${origin.lng}`);
+        shelter = await res.json();
+        if (!res.ok) throw new Error(shelter.error);
+    } catch (err) {
+        alert(err.message || 'Не вдалося зв\'язатися з сервером');
+        return;
     }
+    if (requestId !== routeRequestId) return;
+    if (!shelter.found) {
+        alert(shelter.message);
+        return;
+    }
+
+    routingControl = L.Routing.control({
+        waypoints: [L.latLng(origin.lat, origin.lng), L.latLng(shelter.lat, shelter.lng)],
+        router: L.Routing.osrmv1({
+            serviceUrl: ROUTERS[travelMode].url,
+            profile: 'driving',
+            timeout: 10000
+        }),
+        lineOptions: { styles: [{ color: ROUTE_COLOR, weight: 5, opacity: 0.9 }] },
+        addWaypoints: false,
+        draggableWaypoints: false,
+        fitSelectedRoutes: true,
+        show: false
+    }).addTo(map);
+
+    routingControl.on('routesfound', (e) => {
+        if (requestId !== routeRequestId) return;
+        const summary = e.routes[0].summary;
+        showRouteCard(shelter, summary.totalDistance / 1000, summary.totalTime / 60,
+            'Маршрут вулицями: OSRM, дані © OpenStreetMap');
+    });
+
+    routingControl.on('routingerror', () => {
+        if (requestId !== routeRequestId) return;
+        map.removeControl(routingControl);
+        routingControl = null;
+        showEstimatedRoute(origin, shelter);
+    });
+}
+
+function setTravelMode(mode) {
+    travelMode = mode;
+    document.querySelectorAll('#travelModeToggle .mode-btn').forEach(btn => {
+        const active = btn.dataset.mode === mode;
+        btn.classList.toggle('bg-white', active);
+        btn.classList.toggle('shadow-sm', active);
+        btn.classList.toggle('text-zinc-900', active);
+        btn.classList.toggle('text-zinc-500', !active);
+    });
+    if (routeOrigin) buildRoute(routeOrigin);
+}
+
+document.querySelectorAll('#travelModeToggle .mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => setTravelMode(btn.dataset.mode));
+});
+
+document.getElementById('btnLocateMe').addEventListener('click', () => {
+    if (!navigator.geolocation) {
+        alert('Браузер не підтримує визначення місцезнаходження');
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        (pos) => buildRoute({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => alert('Не вдалося визначити місцезнаходження. Дозвольте доступ до геолокації або клікніть на мапі в режимі навігатора.'),
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+});
+
+map.on('click', (e) => {
+    if (!isNavMode) return;
+    buildRoute({ lat: e.latlng.lat, lng: e.latlng.lng });
 });
 
 document.getElementById('btnCloseRoute').onclick = clearNavigation;

@@ -258,7 +258,14 @@ int main() {
         double distance_km = user_coords->distance_to(shelter->get_coordinates());
         std::cout << "[Укриття] Найближче: " << shelter->get_name() << " (" << distance_km << " км)" << std::endl;
 
+        auto estimate_json = [&](TravelMode mode) {
+            TravelEstimate estimate = planner.estimate_travel(*user_coords, shelter->get_coordinates(), mode);
+            return json{{"distance_km", std::round(estimate.distance_km * 100.0) / 100.0},
+                        {"minutes", std::max(1.0, std::round(estimate.minutes))}};
+        };
+
         json result = {
+            {"estimates", {{"walk", estimate_json(TravelMode::Walk)}, {"drive", estimate_json(TravelMode::Drive)}}},
             {"found", true},
             {"id", shelter->get_id()},
             {"name", shelter->get_name()},
